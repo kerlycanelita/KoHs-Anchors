@@ -1,0 +1,21 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "dev.zymekoh.kohsanchors.mixin",
+  "compatibilityLevel": "JAVA_25",
+  "client": [
+    "ClientPacketListenerMixin",
+    "KeyMappingAccessor",
+    "KeyMappingMixin",
+    "MinecraftMixin",
+    "MinecraftPickInvoker",
+    "MinecraftUseInvoker",
+    "RespawnAnchorBlockMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  },
+  "overwrites": {
+    "requireAnnotations": true
+  }
+}

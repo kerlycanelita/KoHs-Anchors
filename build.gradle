@@ -1,0 +1,213 @@
+plugins {
+	id 'net.fabricmc.fabric-loom' version "${loom_version}" apply false
+	id 'net.fabricmc.fabric-loom-remap' version "${loom_version}" apply false
+}
+
+// `-Pmc=<version>` selects a target from gradle/versions.properties and fills in the Fabric
+// Loader, Fabric API, Mod Menu and Java release that target is built against. Each value stays
+// overridable with its own -P flag.
+def buildMatrix = new Properties()
+file('gradle/versions.properties').withInputStream { buildMatrix.load(it) }
+
+// Only an explicit -P on the command line outranks the matrix; gradle.properties does not.
+def commandLineProperties = gradle.startParameter.projectProperties
+if (commandLineProperties.containsKey('mc')) {
+	project.ext.minecraft_version = commandLineProperties.get('mc').toString()
+}
+def mc = project.minecraft_version.toString()
+
+def matrixEntry = buildMatrix.getProperty(mc)
+if (matrixEntry == null) {
+	throw new GradleException(
+			"Minecraft ${mc} is not in gradle/versions.properties. "
+					+ "Supported targets: ${buildMatrix.stringPropertyNames().sort().join(', ')}.")
+}
+def matrixValues = matrixEntry.split(',').collect { it.trim() }
+[
+		loader_version : matrixValues[0],
+		fabric_version : matrixValues[1],
+		modmenu_version: matrixValues[2],
+		java_version   : matrixValues[3]
+].each { key, value ->
+	if (!commandLineProperties.containsKey(key)) {
+		project.ext.setProperty(key, value)
+	}
+}
+
+// The source tree is written against 26.2, the development focus. The other targets reuse it:
+//
+//   modern  (26.2, 26.3)            compiled as is.
+//   classic (26.1, 26.1.1, 26.1.2)  the screen still lives on Minecraft instead of Gui, so
+//                                   src/compat/classic replaces the compat layer.
+//   legacy  (1.21.11)               obfuscated and remapped from Mojang's names, pick() lives on
+//                                   GameRenderer and the GUI uses the 1.21 GuiGraphics API.
+//
+// Everything that differs between eras goes through dev.zymekoh.kohsanchors.compat.Mc, so the
+// input and prediction logic is byte-for-byte the same source on every target.
+def era = mc.startsWith('1.') ? 'legacy' : (mc in ['26.1', '26.1.1', '26.1.2'] ? 'classic' : 'modern')
+def usesRemapping = era == 'legacy'
+apply plugin: usesRemapping ? 'net.fabricmc.fabric-loom-remap' : 'net.fabricmc.fabric-loom'
+
+// 1.21.11 has the same screen pipeline under its older names.
+def legacyGuiTransform = { String line -> line
+		.replace('net.minecraft.client.gui.GuiGraphicsExtractor', 'net.minecraft.client.gui.GuiGraphics')
+		.replace('GuiGraphicsExtractor', 'GuiGraphics')
+		.replace('extractWidgetRenderState', 'renderWidget')
+		.replace('extractContents', 'renderContents')
+		.replace('extractBackground', 'renderBackground')
+		.replace('extractRenderState', 'render')
+		.replace('extractPanorama', 'renderPanorama')
+		.replace('graphics.text(', 'graphics.drawString(') }
+
+repositories {
+	maven {
+		name = 'Terraformers'
+		url = 'https://maven.terraformersmc.com/releases/'
+	}
+}
+
+version = project.mod_version
+group = project.maven_group
+
+base {
+	archivesName = "${project.archives_base_name}-${mc}"
+}
+
+loom {
+	splitEnvironmentSourceSets()
+
+	mods {
+		"kohs_anchors" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
+}
+
+if (era != 'modern') {
+	def generatedSources = layout.buildDirectory.dir("generated/sources/kohsAnchors/${mc}")
+	def generateEraSources = tasks.register('generateEraSources', Sync) {
+		// The filters below depend on the target and Gradle cannot see inside the closures.
+		// Without these inputs the task stays up to date across a version switch and the next
+		// JAR is compiled from the previous target's sources.
+		inputs.property 'minecraftVersion', mc
+		inputs.property 'era', era
+
+		from('src/client/java') {
+			exclude 'dev/zymekoh/kohsanchors/compat/Mc.java'
+			if (era == 'legacy') {
+				// pick() is public on 1.21.11's GameRenderer; there is nothing to invoke.
+				exclude 'dev/zymekoh/kohsanchors/mixin/MinecraftPickInvoker.java'
+				filesMatching('dev/zymekoh/kohsanchors/gui/**') {
+					filter { line -> legacyGuiTransform(line) }
+				}
+			}
+		}
+		from("src/compat/${era}/java")
+		into generatedSources
+	}
+	sourceSets.client.java.setSrcDirs([generatedSources])
+	tasks.named('compileClientJava').configure {
+		dependsOn generateEraSources
+	}
+	tasks.matching { it.name == 'sourcesJar' }.configureEach {
+		dependsOn generateEraSources
+	}
+}
+
+dependencies {
+	minecraft "com.mojang:minecraft:${mc}"
+	if (usesRemapping) {
+		mappings loom.officialMojangMappings()
+		modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
+		// KoHs Anchor's does not use Fabric API; Mod Menu needs it at runtime, and Loom injects
+		// its interfaces into the Minecraft classes, so javac needs it to read their hierarchy.
+		// Nothing in this mod may import it: players are not required to install it.
+		modCompileOnly "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+		modRuntimeOnly "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+		modCompileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+		modRuntimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+	} else {
+		implementation "net.fabricmc:fabric-loader:${project.loader_version}"
+		compileOnly "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+		runtimeOnly "net.fabricmc.fabric-api:fabric-api:${project.fabric_version}"
+		compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+		runtimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
+	}
+}
+
+// Every JAR is tied to exactly one Minecraft version. Modrinth reads this value from
+// fabric.mod.json, so a range here would advertise versions the JAR was never compiled against.
+def targetJavaVersion = project.java_version.toString().toInteger()
+def metadata = [
+		version             : project.version.toString(),
+		minecraft_dependency: mc,
+		loader_version      : project.loader_version.toString(),
+		java_version        : targetJavaVersion,
+		modmenu_version     : project.modmenu_version.toString()
+]
+
+processResources {
+	inputs.properties metadata
+
+	filesMatching('fabric.mod.json') {
+		expand(metadata)
+	}
+}
+
+processClientResources {
+	// Same reason as generateEraSources: the filter depends on the target.
+	inputs.property 'era', era
+
+	filesMatching('kohs_anchors.client.mixins.json') {
+		filter { line ->
+			if (era == 'legacy') {
+				if (line.contains('"MinecraftPickInvoker"')) {
+					return null
+				}
+				return line.replace('JAVA_25', 'JAVA_21')
+			}
+			return line
+		}
+	}
+}
+
+// The screen geometry is plain arithmetic, so it is checked at every size without Minecraft.
+sourceSets {
+	layoutCheck {
+		java {
+			srcDirs = ['src/client/java', 'src/layoutCheck/java']
+			include 'dev/zymekoh/kohsanchors/gui/AnchorsLayout.java'
+			include 'dev/zymekoh/kohsanchors/gui/AnchorsLayoutCheck.java'
+		}
+	}
+}
+
+def checkLayout = tasks.register('checkLayout', JavaExec) {
+	group = 'verification'
+	description = 'Fits the settings screen to every GUI size and fails on overlaps or clipped regions.'
+	classpath = sourceSets.layoutCheck.runtimeClasspath
+	mainClass = 'dev.zymekoh.kohsanchors.gui.AnchorsLayoutCheck'
+}
+tasks.named('check') {
+	dependsOn checkLayout
+}
+
+tasks.withType(JavaCompile).configureEach {
+	options.encoding = 'UTF-8'
+	options.release = targetJavaVersion
+}
+
+java {
+	withSourcesJar()
+	toolchain.languageVersion = JavaLanguageVersion.of(25)
+}
+
+jar {
+	def projectName = project.name
+	inputs.property 'projectName', projectName
+
+	from('LICENSE') {
+		rename { "${it}_kohs_anchors" }
+	}
+}

@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "id": "kohs_anchors",
+  "version": "${version}",
+  "name": "KoHs Anchor's",
+  "description": "Respawn anchor and glowstone clicks land in the order you pressed them, on the block you are actually looking at, and a detonation shows the moment you use it. Every action still comes from your own click and the server stays in charge.",
+  "authors": [
+    "zymekoh"
+  ],
+  "license": "MIT",
+  "icon": "assets/kohs_anchors/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": [
+      "dev.zymekoh.kohsanchors.KoHsAnchorsClient"
+    ],
+    "modmenu": [
+      "dev.zymekoh.kohsanchors.gui.AnchorsModMenu"
+    ]
+  },
+  "mixins": [
+    {
+      "config": "kohs_anchors.client.mixins.json",
+      "environment": "client"
+    }
+  ],
+  "depends": {
+    "fabricloader": ">=${loader_version}",
+    "minecraft": "${minecraft_dependency}",
+    "java": ">=${java_version}"
+  },
+  "suggests": {
+    "modmenu": ">=${modmenu_version}"
+  }
+}

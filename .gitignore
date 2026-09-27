@@ -1,0 +1,20 @@
+.gradle/
+build/
+run/
+out/
+dist/
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+
+# Machine-local settings and diagnostics
+.claude/settings.local.json
+*.jfr
+*.hprof
+__pycache__/
+*.pyc
+
+# Local snapshots of the project folder
+*.zip
