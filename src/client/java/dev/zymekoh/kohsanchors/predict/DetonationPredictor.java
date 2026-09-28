@@ -8,6 +8,7 @@ import java.util.Iterator;
 import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.sounds.SoundEvents;
@@ -16,6 +17,8 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.attribute.EnvironmentAttributes;
 import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RespawnAnchorBlock;
@@ -23,42 +26,53 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Knows, from the client's side, that an anchor is about to explode, and acts on it without
+ * Knows, from the client's side, that an anchor is about to explode, and shows it without
  * touching the world.
  *
  * <p>Outside the dimensions where anchors set a spawn point, using a charged anchor makes the
  * server explode it; the client only learns this when the server's explosion packet arrives. The
- * client already has everything needed to know it will happen (the charge and the dimension's
- * rule), so:</p>
+ * client already has everything needed to know it will happen (the charge, the item and the
+ * dimension's rule), so:</p>
  *
  * <ul>
- *   <li>the explosion's sound and flash are played on the tick of the press, and not again when
- *   the server's explosion arrives for the same block (its debris and knockback apply as
- *   always);</li>
+ *   <li>the explosion's sound and flash are played at once, and not again when the server's
+ *   explosion arrives for the same block (its debris and knockback apply as always);</li>
+ *   <li>the anchor is drawn as gone at once ({@link AnchorVeil}); the block itself stays in the
+ *   client world until the server removes it;</li>
  *   <li>the anchor is remembered as detonating until the server removes it, so a click aimed at
  *   it in the meantime can wait for the free block instead of landing on the old anchor.</li>
  * </ul>
  *
- * <h2>Why the anchor is not removed on the client</h2>
+ * <p>"At once" is the moment the click is pressed, not the next client tick: a click that will
+ * certainly detonate is shown from the key or button handler, and the tick that then runs the use
+ * only confirms it. This is drawing and sound only; the use itself still runs in the tick.</p>
+ *
+ * <h2>Why the anchor is not removed from the client world</h2>
  *
  * <p>Removing it at once lets the next anchor go down before the server's removal reaches the
  * client. The KoHs Anchor lab measured exactly that on a Grim Anticheat server: Grim models the
  * block from what the client has received, still sees the old anchor's block as it was when the
- * next click arrives, flags {@code AirLiquidPlace} and cancels the click. A Vanilla client cannot
- * produce that sequence, so the block is left to the server and early clicks are held instead.</p>
+ * next click arrives, flags {@code AirLiquidPlace} and cancels the click. So the block is only
+ * hidden from the frame, and early clicks are held instead.</p>
  */
 public final class DetonationPredictor {
     /** Longer than any round trip worth playing on; a later explosion is treated as a new one. */
     private static final long CONFIRM_WINDOW_NANOS = 1_500_000_000L;
+    /** An input-time prediction the next ticks did not confirm is taken back after this. */
+    private static final long INPUT_CONFIRM_NANOS = 250_000_000L;
     private static final int MAX_PENDING = 16;
     private static final double SAME_CENTER = 1.0E-3;
 
     private static final ArrayDeque<Pending> PENDING = new ArrayDeque<>();
     /** Anchors this client detonated that the server has not removed yet, with when. */
     private static final Map<BlockPos, Long> DETONATING = new HashMap<>();
+    /** Detonations shown from the input handler, waiting for the tick's use to confirm them. */
+    private static final Map<BlockPos, Long> SHOWN_AT_INPUT = new HashMap<>();
 
     /** Whether the explosion packet being handled right now was already shown. */
     private static boolean handlingPredicted;
+    /** Set while a use runs whose outcome the advanced chain already predicted. */
+    private static boolean usePredictedElsewhere;
 
     private DetonationPredictor() {
     }
@@ -75,17 +89,35 @@ public final class DetonationPredictor {
         if (player != Minecraft.getInstance().player || !(result instanceof InteractionResult.Success)) {
             return;
         }
-        if (!state.is(Blocks.RESPAWN_ANCHOR) || state.getValue(RespawnAnchorBlock.CHARGE) <= 0) {
+        if (!state.is(Blocks.RESPAWN_ANCHOR) || state.getValue(RespawnAnchorBlock.CHARGE) <= 0
+                || anchorsWork(clientLevel, position)) {
             return;
         }
-        // The same rule the server applies: where anchors work, a use sets the spawn instead.
-        if (Boolean.TRUE.equals(clientLevel.environmentAttributes()
-                .getValue(EnvironmentAttributes.RESPAWN_ANCHOR_WORKS, position))) {
+        if (usePredictedElsewhere) {
             return;
         }
+        if (SHOWN_AT_INPUT.remove(position) != null) {
+            // Shown when the click was pressed; this tick is the use it predicted.
+            return;
+        }
+        if (isDetonating(position) && !(AnchorVeil.predicted(position) instanceof BlockState shown && isCharged(shown))) {
+            // Another click on an anchor that is already exploding: the same explosion.
+            return;
+        }
+        detonate(clientLevel, position);
+    }
 
+    /**
+     * Shows a detonation of the anchor at {@code position}: remembered as detonating, drawn as
+     * gone and, when enabled, heard and seen exploding.
+     */
+    public static void detonate(ClientLevel level, BlockPos position) {
         long now = System.nanoTime();
-        DETONATING.put(position.immutable(), now);
+        BlockPos key = position.immutable();
+        DETONATING.put(key, now);
+        if (AnchorsConfig.settings().hideDetonating || AnchorsConfig.settings().fastChain) {
+            AnchorVeil.predict(level, key, AnchorVeil.air(), AnchorVeil.air());
+        }
         if (!AnchorsConfig.settings().predictDetonation) {
             return;
         }
@@ -93,16 +125,80 @@ public final class DetonationPredictor {
         if (PENDING.size() >= MAX_PENDING) {
             PENDING.pollFirst();
         }
-        Vec3 center = Vec3.atCenterOf(position);
+        Vec3 center = Vec3.atCenterOf(key);
         PENDING.addLast(new Pending(center, now));
 
         // The same sound and flash, with the same parameters, that Vanilla plays for the server's
         // explosion packet of an anchor.
-        RandomSource random = clientLevel.getRandom();
-        clientLevel.playLocalSound(center.x, center.y, center.z, SoundEvents.GENERIC_EXPLODE.value(),
+        RandomSource random = level.getRandom();
+        level.playLocalSound(center.x, center.y, center.z, SoundEvents.GENERIC_EXPLODE.value(),
                 SoundSource.BLOCKS, 4.0F, (1.0F + (random.nextFloat() - random.nextFloat()) * 0.2F) * 0.7F, false);
-        clientLevel.addParticle(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 1.0D, 0.0D, 0.0D);
+        level.addParticle(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 1.0D, 0.0D, 0.0D);
         AnchorStats.predictedDetonation();
+    }
+
+    /**
+     * From the key or button handler, the moment "use" is pressed: when the click will certainly
+     * detonate the anchor under the crosshair, the detonation is shown now instead of on the next
+     * tick. Drawing and sound only; the use itself still runs in the tick, which confirms it.
+     *
+     * @return whether a detonation was shown
+     */
+    public static boolean showAtInput(Minecraft minecraft, BlockPos position) {
+        ClientLevel level = minecraft.level;
+        LocalPlayer player = minecraft.player;
+        if (level == null || player == null || isDetonating(position) || AnchorVeil.isVeiled(position)) {
+            return false;
+        }
+        BlockState state = level.getBlockState(position);
+        if (!willDetonate(level, position, state, player)) {
+            return false;
+        }
+        detonate(level, position);
+        SHOWN_AT_INPUT.put(position.immutable(), System.nanoTime());
+        return true;
+    }
+
+    /**
+     * Whether a use by {@code player} on {@code state} at {@code position} makes the server explode
+     * the anchor. The same decision {@code RespawnAnchorBlock} makes, from the same inputs.
+     */
+    public static boolean willDetonate(ClientLevel level, BlockPos position, BlockState state, LocalPlayer player) {
+        if (!state.is(Blocks.RESPAWN_ANCHOR) || anchorsWork(level, position)) {
+            return false;
+        }
+        int charge = state.getValue(RespawnAnchorBlock.CHARGE);
+        if (charge <= 0) {
+            return false;
+        }
+        ItemStack main = player.getMainHandItem();
+        ItemStack off = player.getOffhandItem();
+        // Sneaking with something in hand uses the item, not the block.
+        if (player.isSecondaryUseActive() && (!main.isEmpty() || !off.isEmpty())) {
+            return false;
+        }
+        boolean chargeable = charge < RespawnAnchorBlock.MAX_CHARGES;
+        if (main.is(Items.GLOWSTONE) && chargeable) {
+            return false;
+        }
+        // Glowstone in the off hand charges before the main hand's item can detonate.
+        return !(off.is(Items.GLOWSTONE) && chargeable);
+    }
+
+    /** Whether anchors set the spawn point here, so a use never explodes one. */
+    public static boolean anchorsWork(ClientLevel level, BlockPos position) {
+        return Boolean.TRUE.equals(level.environmentAttributes().getValue(EnvironmentAttributes.RESPAWN_ANCHOR_WORKS,
+                position));
+    }
+
+    /** Runs {@code use} as a use whose outcome the caller has already shown. */
+    public static void runPredicted(Runnable use) {
+        usePredictedElsewhere = true;
+        try {
+            use.run();
+        } finally {
+            usePredictedElsewhere = false;
+        }
     }
 
     /**
@@ -122,9 +218,27 @@ public final class DetonationPredictor {
     }
 
     /** Every block state the server sends. Anything but an anchor means the anchor is gone. */
-    public static void onServerBlock(BlockPos position, BlockState state) {
+    public static void onServerBlock(ClientLevel level, BlockPos position, BlockState state) {
         if (!DETONATING.isEmpty() && !state.is(Blocks.RESPAWN_ANCHOR)) {
             DETONATING.remove(position);
+        }
+        AnchorVeil.onServerBlock(level, position, state);
+    }
+
+    /** Once a client tick: detonations shown at input that no use confirmed are taken back. */
+    public static void tick(Minecraft minecraft) {
+        if (SHOWN_AT_INPUT.isEmpty()) {
+            return;
+        }
+        long now = System.nanoTime();
+        Iterator<Map.Entry<BlockPos, Long>> iterator = SHOWN_AT_INPUT.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, Long> entry = iterator.next();
+            if (now - entry.getValue() > INPUT_CONFIRM_NANOS) {
+                iterator.remove();
+                DETONATING.remove(entry.getKey());
+                AnchorVeil.lift(minecraft.level, entry.getKey());
+            }
         }
     }
 
@@ -158,6 +272,10 @@ public final class DetonationPredictor {
         // The server sends the explosion before the block changes, so an anchor explosion still
         // finds its anchor on the client.
         return !handlingPredicted && !level.getBlockState(BlockPos.containing(center)).is(Blocks.RESPAWN_ANCHOR);
+    }
+
+    static boolean isCharged(BlockState state) {
+        return state.is(Blocks.RESPAWN_ANCHOR) && state.getValue(RespawnAnchorBlock.CHARGE) > 0;
     }
 
     private static boolean confirm(double x, double y, double z, long now) {

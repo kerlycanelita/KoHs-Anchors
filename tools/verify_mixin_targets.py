@@ -166,6 +166,29 @@ def check_version(version):
     # method_34007 in the remapped 1.21.11 jar).
     if not any(" handleBlockUpdate(" in line for line in reporters) or len(reporters) < 2:
         problems.append("block and section updates no longer arrive through setServerVerifiedBlockState")
+
+    # The veil: the chunk mesher's block reads, the section re-mesh it asks for, the crosshair
+    # outline it hides and the client tick that expires it (see AnchorVeil).
+    region = disassemble(version, "net.minecraft.client.renderer.chunk.RenderSectionRegion")
+    if not re.search(r"public net\.minecraft\.world\.level\.block\.state\.BlockState getBlockState\("
+                     r"net\.minecraft\.core\.BlockPos\);", region):
+        problems.append("RenderSectionRegion.getBlockState(BlockPos) is missing")
+    if not re.search(r"public void setSectionDirtyWithNeighbors\(int, int, int\);", level):
+        problems.append("ClientLevel.setSectionDirtyWithNeighbors(int, int, int) is missing")
+    state_class = ("net.minecraft.client.renderer.state.LevelRenderState" if not modern
+                   else "net.minecraft.client.renderer.state.level.LevelRenderState")
+    outline_owner = ("net.minecraft.client.renderer.extract.LevelExtractor"
+                     if version not in ("1.21.11", "26.1", "26.1.1", "26.1.2")
+                     else "net.minecraft.client.renderer.LevelRenderer")
+    outline = disassemble(version, outline_owner)
+    if not re.search(r"private void extractBlockOutline\(net\.minecraft\.client\.Camera, "
+                     + re.escape(state_class) + r"\);", outline):
+        problems.append(f"{outline_owner}.extractBlockOutline(Camera, LevelRenderState) is missing")
+    render_state = disassemble(version, state_class)
+    if not re.search(r"public [\w.]+BlockOutlineRenderState blockOutlineRenderState;", render_state):
+        problems.append("LevelRenderState.blockOutlineRenderState is missing")
+    if method_body(minecraft, "tick", "()") is None:
+        problems.append("Minecraft.tick() is missing")
     return problems
 
 

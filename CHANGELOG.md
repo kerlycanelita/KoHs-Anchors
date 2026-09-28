@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.3.0 — unreleased
+
+Why Anchor Optimizer felt faster, and the answer, with a new settings screen. See
+[the write-up](docs/research/opciones-avanzadas-0.3.0.md). Not measured yet.
+
+- **Hide detonated anchor** (new, on by default): a detonated anchor disappears from the chunk
+  mesh (Vanilla and Sodium) and its outline the moment it is used. Drawing only: the block, its
+  collision, the crosshair's raycast and every packet are unchanged, so nothing new reaches the
+  server.
+- Instant detonation now shows the explosion's sound and flash, and hides the anchor, the moment
+  "use" is pressed (remapped key or mouse), not on the next tick. The use itself still runs in
+  the tick.
+- New tab **Advanced · not secure**, crimson, with two options off by default. Switching one on
+  opens a warning ("YOU ARE WARNED") that must be read for 2.2 s, then plays the anchor ritual.
+  - **No-wait chain**: clicks on an exploding anchor are sent at once instead of waiting for the
+    server, and the next anchor, its charge and its explosion are drawn at once. Glowstone that
+    would land as a block and anchors that would stack are dropped; a click whose crosshair passes
+    through a drawn anchor the world does not have yet waits for it.
+  - **Instant detonation click**: a detonating click is sent the moment it is pressed, between
+    client ticks. Up to 50 ms sooner; Vanilla never sends a click between ticks.
+- The settings screen is redone in the Zymekoh style: four tabs, a turning anchor sigil, the 3D
+  anchor inside a ritual circle that lights its charges, blade-cut transitions, crimson for
+  danger. Session numbers change with the tab.
+- `verify_mixin_targets.py` checks the new targets on every version.
+
 ## 0.2.1 — unreleased
 
 Anchor bursts that went wrong next to Herzium's last-input hotbar order, reproduced with the

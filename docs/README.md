@@ -7,6 +7,9 @@
 - [Laboratorio de servidor 0.2.0](research/laboratorio-servidor-0.2.0.md): the real speed of
   place, charge and detonate against a Grim Anticheat server with 0 to 150 ms of added latency,
   Vanilla against 0.2.0, what was tried and rejected, with charts and screenshots (in Spanish).
+- [Opciones avanzadas 0.3.0](research/opciones-avanzadas-0.3.0.md): why Anchor Optimizer felt faster,
+  the hidden detonated anchor, the no-wait chain and the instant detonation click, with the
+  fair-play and anticheat analysis of each (in Spanish).
 - [Nexo y Herzium 0.2.1](research/nexo-y-herzium-0.2.1.md): which item each click really gets next
   to Herzium's last-input hotbar order, with "use" on the period key; every misplaced block, 0.2.0
   against 0.2.1, and what belongs to Herzium (in Spanish).

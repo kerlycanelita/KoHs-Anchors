@@ -12,6 +12,8 @@ public final class AnchorStats {
     private static int heldClicks;
     private static int mergedClicks;
     private static int droppedClicks;
+    private static int chainedClicks;
+    private static int instantDetonations;
 
     private AnchorStats() {
     }
@@ -48,6 +50,24 @@ public final class AnchorStats {
     /** Waiting clicks dropped because their anchor was never removed by the server. */
     public static int droppedClicks() {
         return droppedClicks;
+    }
+
+    /** Clicks the advanced chain sent without waiting, with their outcome drawn at once. */
+    public static int chainedClicks() {
+        return chainedClicks;
+    }
+
+    /** Detonations sent the moment the click was pressed, by the advanced instant detonation. */
+    public static int instantDetonations() {
+        return instantDetonations;
+    }
+
+    static void chainedClick() {
+        chainedClicks++;
+    }
+
+    static void instantDetonation() {
+        instantDetonations++;
     }
 
     static void heldClick() {

@@ -77,6 +77,36 @@ public final class AnchorsLayoutCheck {
         if (layout.rowWidth() < 150) {
             failures.add(size + "rows too narrow: " + layout.rowWidth());
         }
+
+        inside(size + "tabs", layout.tabs, panel, failures);
+        if (layout.header.bottom() > layout.tabs.y() || layout.tabs.bottom() > layout.options.y()) {
+            failures.add(size + "tabs overlap the header or the options");
+        }
+        for (int index = 0; index < AnchorsLayout.TAB_COUNT; index++) {
+            AnchorsLayout.Rect tab = layout.tab(index);
+            inside(size + "tab " + index, tab, layout.tabs, failures);
+            if (tab.width() < AnchorsLayout.MIN_TAB_WIDTH || tab.height() < 12) {
+                failures.add(size + "tab " + index + " too small for its icon: " + tab);
+            }
+            if (index > 0 && tab.intersects(layout.tab(index - 1))) {
+                failures.add(size + "tabs " + (index - 1) + " and " + index + " overlap");
+            }
+        }
+
+        AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
+        inside(size + "modal", modal.box(), screen, failures);
+        inside(size + "modal cancel", modal.cancel(), modal.box(), failures);
+        inside(size + "modal confirm", modal.confirm(), modal.box(), failures);
+        if (modal.cancel().intersects(modal.confirm())) {
+            failures.add(size + "modal buttons overlap");
+        }
+        if (modal.confirm().width() < 60 || modal.cancel().width() < 40 || modal.confirm().height() < 12) {
+            failures.add(size + "modal buttons too small: " + modal.cancel() + " " + modal.confirm());
+        }
+        // The warning needs room for its title and at least three lines above the buttons.
+        if (modal.cancel().y() - modal.box().y() < 70) {
+            failures.add(size + "modal too short for the warning: " + modal.box());
+        }
     }
 
     private static void inside(String name, AnchorsLayout.Rect rect, AnchorsLayout.Rect outer, List<String> failures) {

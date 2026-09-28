@@ -34,6 +34,18 @@ final class InputJournal {
         this.size++;
     }
 
+    /** Forgets the latest use press: it was run at once and is no longer pending. */
+    void forgetLastUse() {
+        for (int index = this.size - 1; index >= 0; index--) {
+            if (this.actions[index] == USE) {
+                System.arraycopy(this.actions, index + 1, this.actions, index, this.size - index - 1);
+                System.arraycopy(this.times, index + 1, this.times, index, this.size - index - 1);
+                this.size--;
+                return;
+            }
+        }
+    }
+
     /**
      * Moves the pending actions into {@code out} and empties the journal.
      *

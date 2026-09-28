@@ -52,6 +52,11 @@ final class AnchorPreview {
     private boolean dragging;
     private double dragDistance;
 
+    /** The charge the anchor shows right now, easing between whole charges. */
+    float charge() {
+        return this.shownCharge;
+    }
+
     void render(GuiGraphicsExtractor graphics, Font font, AnchorsLayout.Rect area, int mouseX, int mouseY,
             boolean motion, float intro, String hint) {
         long now = System.nanoTime();

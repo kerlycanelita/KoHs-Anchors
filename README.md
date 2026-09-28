@@ -19,7 +19,7 @@ before any of them. A fast *place anchor → glowstone → detonate* that fits i
 therefore charge with the wrong item or aim the glowstone at the floor under the anchor you just
 placed: the click is lost. KoHs Anchor's keeps the order and the target you actually gave it.
 
-> **Status: 0.2.1, development build.** Measured on Minecraft 26.2 against a local server with
+> **Status: 0.3.0, development build.** Measured on Minecraft 26.2 against a local server with
 > Grim Anticheat and up to 150 ms of added latency (see below). Every other version compiles and
 > has each Mixin target checked against its bytecode, but only 26.2 has been played.
 
@@ -52,9 +52,13 @@ placed: the click is lost. KoHs Anchor's keeps the order and the target you actu
   with anchors it can only fail or, on grass, snow or the fire an explosion leaves, stack a second
   anchor on the first. It joins the first one. Charging with glowstone is not limited.
 - **Instant detonation.** Using a charged anchor where anchors explode plays the explosion's
-  sound and flash on that tick instead of a round trip later. When the server's explosion arrives
-  for the same block its sound and flash are not repeated; its debris, knockback and block
-  changes apply as always.
+  sound and flash the moment you press use, instead of a tick and a round trip later. When the
+  server's explosion arrives for the same block its sound and flash are not repeated; its debris,
+  knockback and block changes apply as always.
+- **Hide detonated anchor.** The anchor you detonate disappears at once instead of standing there
+  until the server's explosion arrives. Only its drawing changes (Vanilla and Sodium chunk meshes
+  and the crosshair outline): the block, its collision and everything the server sees stay as
+  they are.
 - **Anchor explosion debris.** Optional: hide the block-debris particles of anchor explosions to
   save frames in anchor fights. Other explosions keep theirs.
 
@@ -83,6 +87,21 @@ misplaced block and no Grim alert ([write-up](docs/research/nexo-y-herzium-0.2.1
 
 ![KoHs Anchor's next to Herzium, before and after](docs/images/herzium-antes-despues.png)
 
+## Advanced options (not secure)
+
+The crimson **Advanced · not secure** tab holds two options that are off by default. They change
+when your clicks reach the server, so anticheats such as Grim may flag them and many servers
+forbid them. Switching one on shows a warning you have to read first. Check your server's rules.
+
+- **No-wait chain**: clicks on an exploding anchor go out at once instead of waiting for the
+  server, and the next anchor, its charge and its explosion are drawn at once. It never places a
+  glowstone block where an anchor should be and never stacks anchors.
+- **Instant detonation click**: a click that detonates an anchor is sent the moment you press
+  it, between game ticks, up to 50 ms sooner.
+
+The fair-play and anticheat analysis of each is in
+[opciones-avanzadas-0.3.0.md](docs/research/opciones-avanzadas-0.3.0.md) (in Spanish).
+
 ## What it never does
 
 Every action is one press Minecraft already counted. The mod never creates or repeats a press,
@@ -101,12 +120,12 @@ at a container are left entirely to Vanilla.
 ## Settings
 
 With [Mod Menu](https://modrinth.com/mod/modmenu) installed, open *Mods → KoHs Anchor's*. The
-screen is a purple glass panel over a transparent purple veil. Its preview is a real respawn
-anchor drawn by the game's own block renderer: drag to turn it, scroll to zoom, click to charge
-it. Beside it are this session's numbers: bursts kept in pressed order, uses that landed on the
-real target, early clicks that waited, and detonations shown instantly and then confirmed by the
-server. Every option, and the screen's own animations, can be turned off. Settings live in
-`config/kohs_anchors.json`.
+screen is black-purple glass over a transparent veil with an anchor sigil turning behind it, in
+four tabs: Precision, Effects, Interface and the crimson Advanced · not secure. Its preview is a
+real respawn anchor drawn by the game's own block renderer inside a ritual circle that lights a
+node for every charge: drag to turn it, scroll to zoom, click to charge it. Beside it are this
+session's numbers, which change with the tab. Every option, and the screen's own animations,
+can be turned off. Settings live in `config/kohs_anchors.json`.
 
 ## Supported versions
 

@@ -18,11 +18,14 @@ import net.minecraft.util.Mth;
  * One option: its name, what it does, and a switch whose knob slides to the new state. The whole
  * card is the button, and it only answers inside the scrolling area it is drawn in, so the part of
  * a card scrolled out of view cannot be clicked.
+ *
+ * <p>A danger row (the advanced tab) is drawn in crimson and carries a "not secure" tag, so its
+ * risk reads from the shape and the words as well as the colour.</p>
  */
 final class AnchorSwitchRow extends AbstractButton {
-    static final int PAD_X = 7;
-    static final int PAD_Y = 5;
-    static final int SWITCH_WIDTH = 20;
+    static final int PAD_X = 8;
+    static final int PAD_Y = 6;
+    static final int SWITCH_WIDTH = 22;
     static final int SWITCH_HEIGHT = 10;
     private static final int LINE_HEIGHT = 10;
     private static final long PRESS_FLASH_NANOS = 260_000_000L;
@@ -31,6 +34,8 @@ final class AnchorSwitchRow extends AbstractButton {
 
     private final BooleanSupplier state;
     private final Runnable toggle;
+    private final boolean danger;
+    private final String tag;
     private final List<FormattedCharSequence> descriptionLines;
     private AnchorsLayout.Rect clip = AnchorsLayout.Rect.EMPTY;
     private float appear = 1.0F;
@@ -41,10 +46,12 @@ final class AnchorSwitchRow extends AbstractButton {
     private boolean pressedOnce;
 
     AnchorSwitchRow(int x, int y, int width, Component label, Component description, Font font,
-            BooleanSupplier state, Runnable toggle) {
+            BooleanSupplier state, Runnable toggle, boolean danger, Component tag) {
         super(x, y, width, heightFor(font, description, width), label);
         this.state = state;
         this.toggle = toggle;
+        this.danger = danger;
+        this.tag = tag == null ? "" : tag.getString();
         this.descriptionLines = AnchorsUi.wrap(font, description, textWidth(font, width));
     }
 
@@ -100,20 +107,29 @@ final class AnchorSwitchRow extends AbstractButton {
         int y = getY();
         int width = getWidth();
         int height = getHeight();
-        AnchorsUi.panel(graphics, x, y, width, height,
-                AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.CARD, AnchorsTheme.CARD_HOVER, this.hover), fade),
-                AnchorsTheme.fade(AnchorsTheme.lerp(0x1C12061E, 0x2E1A0A36, this.hover), fade));
-        AnchorsUi.roundedOutline(graphics, x, y, width, height, AnchorsTheme.fade(
-                AnchorsTheme.lerp(AnchorsTheme.CARD_BORDER, AnchorsTheme.CARD_BORDER_HOVER, this.hover), fade));
-        // A violet edge on the left follows the switch, so the state also reads from a distance.
-        graphics.fill(x + 2, y + 3, x + 3, y + height - 3,
-                AnchorsTheme.withAlpha(AnchorsTheme.ACCENT, Math.round(210.0F * this.knob * fade)));
+        int accent = this.danger ? AnchorsTheme.CRIMSON : AnchorsTheme.ACCENT;
+        int top = this.danger ? AnchorsTheme.lerp(0x5A2A0A18, 0x7A3D0E22, this.hover)
+                : AnchorsTheme.lerp(AnchorsTheme.CARD, AnchorsTheme.CARD_HOVER, this.hover);
+        int bottom = this.danger ? AnchorsTheme.lerp(0x4A140510, 0x6A220816, this.hover)
+                : AnchorsTheme.lerp(AnchorsTheme.CARD_BOTTOM, AnchorsTheme.CARD_BOTTOM_HOVER, this.hover);
+        AnchorsUi.panel(graphics, x, y, width, height, AnchorsTheme.fade(top, fade), AnchorsTheme.fade(bottom, fade));
+        int border = this.danger ? AnchorsTheme.lerp(0x8A6A1030, 0xF0FF315C, this.hover)
+                : AnchorsTheme.lerp(AnchorsTheme.CARD_BORDER, AnchorsTheme.CARD_BORDER_HOVER, this.hover);
+        AnchorsUi.roundedOutline(graphics, x, y, width, height, AnchorsTheme.fade(border, fade));
+        if (this.hover > 0.05F) {
+            AnchorsUi.bladeCorners(graphics, x, y, width, height, 5,
+                    AnchorsTheme.fade(this.danger ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT_BRIGHT,
+                            this.hover * fade));
+        }
+        // An edge on the left follows the switch, so the state also reads from a distance.
+        graphics.fill(x + 2, y + 3, x + 4, y + height - 3,
+                AnchorsTheme.withAlpha(accent, Math.round(220.0F * this.knob * fade)));
 
         long sincePress = now - this.pressedAt;
         if (this.pressedOnce && sincePress >= 0L && sincePress < PRESS_FLASH_NANOS) {
             float t = sincePress / (float) PRESS_FLASH_NANOS;
-            graphics.fill(x + 1, y + 1, x + width - 1, y + height - 1,
-                    AnchorsTheme.withAlpha(0xE9CCFF, Math.round(90.0F * (1.0F - t) * (1.0F - t) * fade)));
+            graphics.fill(x + 1, y + 1, x + width - 1, y + height - 1, AnchorsTheme.withAlpha(
+                    this.danger ? 0xFF9AB0 : 0xE9D5FF, Math.round(90.0F * (1.0F - t) * (1.0F - t) * fade)));
         }
 
         Font font = Minecraft.getInstance().font;
@@ -124,24 +140,38 @@ final class AnchorSwitchRow extends AbstractButton {
         int stateX = switchX - 5 - font.width(stateText);
         int textX = x + PAD_X + 2;
 
-        String label = AnchorsUi.fit(font, getMessage().getString(), stateX - 6 - textX);
+        int tagWidth = this.tag.isEmpty() ? 0 : font.width(this.tag) + 8;
+        String label = AnchorsUi.fit(font, getMessage().getString(), stateX - 6 - textX - (tagWidth > 0 ? tagWidth + 4 : 0));
         AnchorsUi.label(graphics, font, label, textX, labelY,
                 AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.TEXT, 0xFFFFFFFF, this.hover), fade), false);
-        int lineY = labelY + 12;
+        if (tagWidth > 0) {
+            int tagX = textX + font.width(label) + 5;
+            if (tagX + tagWidth < stateX - 4) {
+                AnchorsUi.panel(graphics, tagX, labelY - 2, tagWidth, 12, AnchorsTheme.fade(0xC0500A1E, fade),
+                        AnchorsTheme.fade(0xC02A0510, fade));
+                AnchorsUi.roundedOutline(graphics, tagX, labelY - 2, tagWidth, 12,
+                        AnchorsTheme.fade(AnchorsTheme.CRIMSON_BRIGHT, fade));
+                AnchorsUi.label(graphics, font, this.tag, tagX + 4, labelY, AnchorsTheme.fade(0xFFFFD6DE, fade), false);
+            }
+        }
+        int lineY = labelY + 13;
         for (FormattedCharSequence line : this.descriptionLines) {
             AnchorsUi.line(graphics, font, line, textX, lineY, AnchorsTheme.fade(AnchorsTheme.TEXT_MUTED, fade));
             lineY += LINE_HEIGHT;
         }
 
+        int onColor = this.danger ? 0xFFFFC2CE : AnchorsTheme.STATE_ON;
         AnchorsUi.label(graphics, font, stateText, stateX, labelY,
-                AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.STATE_OFF, AnchorsTheme.STATE_ON, this.knob), fade), false);
+                AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.STATE_OFF, onColor, this.knob), fade), false);
         drawSwitch(graphics, switchX, switchY, fade);
     }
 
     private void drawSwitch(GuiGraphicsExtractor graphics, int x, int y, float fade) {
-        int track = AnchorsTheme.lerp(AnchorsTheme.SWITCH_OFF, AnchorsTheme.SWITCH_ON, this.knob);
+        int onTrack = this.danger ? AnchorsTheme.SWITCH_DANGER_ON : AnchorsTheme.SWITCH_ON;
+        int track = AnchorsTheme.lerp(AnchorsTheme.SWITCH_OFF, onTrack, this.knob);
         if (this.knob > 0.02F) {
-            AnchorsUi.halo(graphics, x, y, SWITCH_WIDTH, SWITCH_HEIGHT, AnchorsTheme.ACCENT, 2, this.knob * fade);
+            AnchorsUi.halo(graphics, x, y, SWITCH_WIDTH, SWITCH_HEIGHT, this.danger ? AnchorsTheme.CRIMSON_BRIGHT
+                    : AnchorsTheme.ACCENT, 2, this.knob * fade);
         }
         graphics.fill(x + 1, y, x + SWITCH_WIDTH - 1, y + SWITCH_HEIGHT, AnchorsTheme.fade(track, fade));
         graphics.fill(x, y + 1, x + SWITCH_WIDTH, y + SWITCH_HEIGHT - 1, AnchorsTheme.fade(track, fade));
@@ -149,12 +179,19 @@ final class AnchorSwitchRow extends AbstractButton {
         int knobX = x + 1 + Math.round((SWITCH_WIDTH - knobSize - 2) * this.knob);
         graphics.fill(knobX, y + 1, knobX + knobSize, y + 1 + knobSize,
                 AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.KNOB_OFF, AnchorsTheme.KNOB_ON, this.knob), fade));
+        // A notch in the knob, like the groove of a blade.
+        graphics.fill(knobX + knobSize / 2, y + 3, knobX + knobSize / 2 + 1, y + SWITCH_HEIGHT - 3,
+                AnchorsTheme.fade(AnchorsTheme.lerp(0xFF6E6982, this.danger ? AnchorsTheme.CRIMSON : AnchorsTheme.ACCENT_DEEP,
+                        this.knob), fade));
     }
 
     @Override
     protected MutableComponent createNarrationMessage() {
-        return super.createNarrationMessage().append(CommonComponents.NARRATION_SEPARATOR)
-                .append(this.state.getAsBoolean() ? ON : OFF);
+        MutableComponent message = super.createNarrationMessage();
+        if (!this.tag.isEmpty()) {
+            message = message.append(CommonComponents.NARRATION_SEPARATOR).append(Component.literal(this.tag));
+        }
+        return message.append(CommonComponents.NARRATION_SEPARATOR).append(this.state.getAsBoolean() ? ON : OFF);
     }
 
     @Override

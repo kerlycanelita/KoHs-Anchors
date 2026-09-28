@@ -5,6 +5,7 @@ import dev.zymekoh.kohsanchors.compat.Mc;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.mixin.KeyMappingAccessor;
 import dev.zymekoh.kohsanchors.mixin.MinecraftUseInvoker;
+import dev.zymekoh.kohsanchors.predict.AnchorVeil;
 import dev.zymekoh.kohsanchors.predict.DetonationPredictor;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -12,6 +13,7 @@ import net.minecraft.client.Options;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 
@@ -80,6 +82,11 @@ public final class AnchorInput {
     private static int heldCount;
     private static long heldSince;
     private static BlockPos heldFor;
+    /** Why the held clicks wait: an exploding anchor, or a drawn anchor the world does not have yet. */
+    private static boolean heldForCatchUp;
+
+    /** What happens to one use press. */
+    private enum Decision { RUN, RUN_PREDICTED, HOLD, DROP }
 
     private AnchorInput() {
     }
@@ -105,6 +112,61 @@ public final class AnchorInput {
                 JOURNAL.record(slot, now);
             }
         }
+    }
+
+    /**
+     * After Minecraft counted a press, from the key or button handler, between client ticks.
+     *
+     * <p>A "use" press that will certainly detonate the anchor under the crosshair is shown at
+     * once (sound, flash and the anchor drawn as gone); the use itself runs in the next tick as
+     * always. With the advanced instant detonation, that use is sent right here instead.</p>
+     */
+    public static void afterKeyClicked(InputConstants.Key key) {
+        Minecraft minecraft = Minecraft.getInstance();
+        AnchorsConfig.Settings settings = AnchorsConfig.settings();
+        if (minecraft.player == null || minecraft.level == null
+                || !(settings.predictDetonation || settings.hideDetonating || settings.instantDetonation)) {
+            return;
+        }
+        Options options = minecraft.options;
+        if (!key.equals(keyOf(options.keyUse)) || !AnchorContext.ready(minecraft)) {
+            return;
+        }
+        // A number key waiting for the tick decides which item this click uses; the tick judges.
+        for (KeyMapping slot : options.keyHotbarSlots) {
+            if (pending(slot)) {
+                return;
+            }
+        }
+        if (!(minecraft.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
+            return;
+        }
+        BlockPos target = hit.getBlockPos();
+        BlockState drawn = AnchorVeil.predicted(target);
+        BlockState state = drawn != null ? drawn : minecraft.level.getBlockState(target);
+        if (!DetonationPredictor.willDetonate(minecraft.level, target, state, minecraft.player)) {
+            return;
+        }
+        if (drawn == null && DetonationPredictor.isDetonating(target)) {
+            // Already exploding: this press is an early click for the next anchor.
+            return;
+        }
+        if (settings.instantDetonation && pending(options.keyUse) && options.keyUse.consumeClick()) {
+            JOURNAL.forgetLastUse();
+            DetonationPredictor.detonate(minecraft.level, target);
+            DetonationPredictor.runPredicted(() -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem());
+            AnchorStats.instantDetonation();
+            return;
+        }
+        if (drawn == null && (settings.predictDetonation || settings.hideDetonating)) {
+            DetonationPredictor.showAtInput(minecraft, target);
+        }
+    }
+
+    /** Once a client tick, before its input pass. */
+    public static void tick(Minecraft minecraft) {
+        AnchorVeil.tick(minecraft);
+        DetonationPredictor.tick(minecraft);
     }
 
     /** Start of {@code handleKeybinds}: held clicks whose anchor is gone run first, in order. */
@@ -161,11 +223,38 @@ public final class AnchorInput {
      * @return whether Vanilla should run it now; {@code false} when it is held
      */
     public static boolean admitQueuedUse(Minecraft minecraft) {
+        return switch (decide(minecraft)) {
+            case RUN -> true;
+            case RUN_PREDICTED -> {
+                runPredicted(minecraft);
+                yield false;
+            }
+            case HOLD, DROP -> false;
+        };
+    }
+
+    /**
+     * What happens to the use press about to run: now, now with its outcome already drawn, held,
+     * or dropped because it could only fail or misplace a block.
+     */
+    private static Decision decide(Minecraft minecraft) {
         if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft)) {
             AnchorStats.mergedClick();
-            return false;
+            return Decision.DROP;
+        }
+        if (AnchorsConfig.settings().fastChain) {
+            return switch (FastChain.decide(minecraft)) {
+                case RUN -> Decision.RUN;
+                case RUN_PREDICTED -> Decision.RUN_PREDICTED;
+                case DROP -> Decision.DROP;
+                case CATCH_UP -> hold(minecraft, FastChain.catchUpTarget(), true);
+            };
         }
         return admit(minecraft);
+    }
+
+    private static void runPredicted(Minecraft minecraft) {
+        DetonationPredictor.runPredicted(() -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem());
     }
 
     private static void replay(Minecraft minecraft, int[] burst, int count) {
@@ -182,10 +271,11 @@ public final class AnchorInput {
                 if (!options.keyUse.consumeClick()) {
                     continue;
                 }
-                if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft)) {
-                    AnchorStats.mergedClick();
-                } else if (admit(minecraft)) {
-                    ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
+                switch (decide(minecraft)) {
+                    case RUN -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
+                    case RUN_PREDICTED -> runPredicted(minecraft);
+                    default -> {
+                    }
                 }
             } else if (slots[action].consumeClick()) {
                 // Exactly what Vanilla does for a number key outside spectator and creative saving.
@@ -199,17 +289,28 @@ public final class AnchorInput {
      * Whether a use about to run may run now. A use aimed at an anchor this client detonated and
      * the server has not removed yet is held instead, with the slot it was pressed with.
      */
-    private static boolean admit(Minecraft minecraft) {
+    private static Decision admit(Minecraft minecraft) {
         if (!AnchorsConfig.settings().holdEarlyClicks || minecraft.player == null
                 || !(minecraft.hitResult instanceof BlockHitResult hit) || hit.getType() != HitResult.Type.BLOCK) {
-            return true;
+            return Decision.RUN;
         }
         BlockPos target = hit.getBlockPos();
         if (!DetonationPredictor.isDetonating(target)) {
-            return true;
+            return Decision.RUN;
         }
-        if (heldCount > 0 && !heldFor.equals(target)) {
-            return true;
+        return hold(minecraft, target, false);
+    }
+
+    /**
+     * Holds the use press about to run until {@code target} is ready: the server removed the
+     * exploding anchor there, or ({@code catchUp}) the world has the anchor that is already drawn.
+     */
+    private static Decision hold(Minecraft minecraft, BlockPos target, boolean catchUp) {
+        if (minecraft.player == null || target == null) {
+            return Decision.RUN;
+        }
+        if (heldCount > 0 && (!heldFor.equals(target) || heldForCatchUp != catchUp)) {
+            return Decision.RUN;
         }
         int slot = minecraft.player.getInventory().getSelectedSlot();
         if (heldCount > 0 && HELD_SLOTS[heldCount - 1] == slot) {
@@ -218,18 +319,19 @@ public final class AnchorInput {
             // second anchor on the first, or charge it with glowstone meant for nothing. Vanilla
             // would have spent this click on the old anchor too.
             AnchorStats.mergedClick();
-            return false;
+            return Decision.DROP;
         }
         if (heldCount == HOLD_CAPACITY) {
-            return true;
+            return Decision.RUN;
         }
         if (heldCount == 0) {
             heldSince = System.nanoTime();
             heldFor = target.immutable();
+            heldForCatchUp = catchUp;
         }
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
-        return false;
+        return Decision.HOLD;
     }
 
     /**
@@ -243,7 +345,8 @@ public final class AnchorInput {
      * spent them on that same anchor.</p>
      */
     private static void releaseHeld(Minecraft minecraft) {
-        boolean cleared = !DetonationPredictor.isDetonating(heldFor);
+        boolean cleared = heldForCatchUp ? FastChain.caughtUp(minecraft.level, heldFor)
+                : !DetonationPredictor.isDetonating(heldFor);
         if (!cleared && System.nanoTime() - heldSince < HOLD_TIMEOUT_NANOS) {
             return;
         }
@@ -266,7 +369,16 @@ public final class AnchorInput {
             Mc.pick(minecraft);
             usesThisPass++;
             lastUseSlot = HELD_SLOTS[index];
-            ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
+            if (!AnchorsConfig.settings().fastChain) {
+                ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
+                continue;
+            }
+            // The chain judges the released click against what is drawn now, as any other.
+            switch (FastChain.decide(minecraft)) {
+                case RUN -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
+                case RUN_PREDICTED -> runPredicted(minecraft);
+                default -> AnchorStats.droppedClicks(1);
+            }
         }
         if (inventory.getSelectedSlot() != selected) {
             inventory.setSelectedSlot(selected);

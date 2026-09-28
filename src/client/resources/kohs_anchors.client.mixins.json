@@ -11,7 +11,10 @@
     "MinecraftMixin",
     "MinecraftPickInvoker",
     "MinecraftUseInvoker",
-    "RespawnAnchorBlockMixin"
+    "RenderSectionRegionMixin",
+    "RespawnAnchorBlockMixin",
+    "SodiumLevelSliceMixin",
+    "VeiledOutlineMixin"
   ],
   "injectors": {
     "defaultRequire": 1

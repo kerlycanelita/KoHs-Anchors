@@ -237,6 +237,156 @@ final class AnchorsUi {
         }
     }
 
+    /**
+     * Angular marks on the four corners, like the clasps of a blade: a short stroke along each
+     * edge and a pixel stepping diagonally inwards.
+     */
+    static void bladeCorners(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int size, int color) {
+        if (width < size * 2 + 4 || height < size * 2 + 4 || ((color >>> 24) & 255) < 4) {
+            return;
+        }
+        int right = x + width;
+        int bottom = y + height;
+        graphics.fill(x - 1, y - 1, x + size, y, color);
+        graphics.fill(x - 1, y, x, y + size, color);
+        graphics.fill(x + 1, y + 1, x + 2, y + 2, color);
+        graphics.fill(right - size, y - 1, right + 1, y, color);
+        graphics.fill(right, y, right + 1, y + size, color);
+        graphics.fill(right - 2, y + 1, right - 1, y + 2, color);
+        graphics.fill(x - 1, bottom, x + size, bottom + 1, color);
+        graphics.fill(x - 1, bottom - size, x, bottom, color);
+        graphics.fill(x + 1, bottom - 2, x + 2, bottom - 1, color);
+        graphics.fill(right - size, bottom, right + 1, bottom + 1, color);
+        graphics.fill(right, bottom - size, right + 1, bottom, color);
+        graphics.fill(right - 2, bottom - 2, right - 1, bottom - 1, color);
+    }
+
+    /** A thin separator with a bright segment travelling along it. */
+    static void energyLine(GuiGraphicsExtractor graphics, int left, int right, int y, int color, double seconds,
+            float strength) {
+        if (right - left < 8 || strength <= 0.02F) {
+            return;
+        }
+        graphics.fill(left, y, right, y + 1, fade(color, 0.28F * strength));
+        int span = right - left;
+        int head = left + (int) ((seconds * 90.0D) % (span + 60)) - 30;
+        for (int step = 0; step < 30; step++) {
+            int px = head - step;
+            if (px < left || px >= right) {
+                continue;
+            }
+            float t = 1.0F - step / 30.0F;
+            graphics.fill(px, y, px + 1, y + 1, fade(color, t * strength));
+        }
+    }
+
+    /**
+     * A blade slash across {@code rect}: a slanted band of light moving from left to right as
+     * {@code progress} goes from 0 to 1. Drawn inside the rect only.
+     */
+    static void slash(GuiGraphicsExtractor graphics, AnchorsLayout.Rect rect, float progress, int color) {
+        if (progress <= 0.0F || progress >= 1.0F || rect.width() <= 0 || rect.height() <= 0) {
+            return;
+        }
+        float eased = AnchorsTheme.easeOutCubic(progress);
+        int travel = rect.width() + rect.height();
+        int center = rect.x() - rect.height() + Math.round(travel * eased);
+        float fadeOut = 1.0F - progress;
+        graphics.enableScissor(rect.x(), rect.y(), rect.right(), rect.bottom());
+        for (int row = 0; row < rect.height(); row += 2) {
+            int offset = center + (rect.height() - row) / 2;
+            graphics.fill(offset - 10, rect.y() + row, offset + 10, rect.y() + row + 2, fade(color, 0.16F * fadeOut));
+            graphics.fill(offset - 3, rect.y() + row, offset + 3, rect.y() + row + 2, fade(0xFFFFF7FF, 0.55F * fadeOut));
+        }
+        graphics.disableScissor();
+    }
+
+    /**
+     * The anchor sigil: an outer ring of rune ticks turning one way, an inner ring turning the
+     * other, and four charge nodes that light up with {@code charge}. Slow, and behind everything.
+     */
+    static void sigil(GuiGraphicsExtractor graphics, int centerX, int centerY, int radius, double seconds,
+            int color, float alpha, float charge) {
+        if (radius < 10 || alpha <= 0.02F) {
+            return;
+        }
+        ring(graphics, centerX, centerY, radius, 1, fade(color, 0.35F * alpha));
+        ring(graphics, centerX, centerY, Math.round(radius * 0.72F), 1, fade(color, 0.22F * alpha));
+        int ticks = 36;
+        double outer = seconds * 0.12D;
+        for (int tick = 0; tick < ticks; tick++) {
+            double angle = outer + tick * Math.PI * 2.0D / ticks;
+            int length = tick % 3 == 0 ? 4 : 2;
+            int px = centerX + (int) Math.round(Math.cos(angle) * (radius - 3));
+            int py = centerY + (int) Math.round(Math.sin(angle) * (radius - 3));
+            int size = tick % 9 == 0 ? 2 : 1;
+            graphics.fill(px, py, px + size, py + length / 2 + size - 1, fade(color, (tick % 3 == 0 ? 0.6F : 0.3F) * alpha));
+        }
+        double inner = -seconds * 0.2D;
+        int innerRadius = Math.round(radius * 0.72F);
+        for (int node = 0; node < 4; node++) {
+            double angle = inner + node * Math.PI / 2.0D;
+            int px = centerX + (int) Math.round(Math.cos(angle) * innerRadius);
+            int py = centerY + (int) Math.round(Math.sin(angle) * innerRadius);
+            float lit = AnchorsTheme.clamp01(charge - node);
+            diamond(graphics, px, py, 3, fade(AnchorsTheme.lerp(0xFF3A1F5C, AnchorsTheme.ACCENT_BRIGHT, lit), alpha));
+            if (lit > 0.05F) {
+                glowEllipse(graphics, px, py, 7, 7, 0xC084FC, lit * alpha * 0.6F);
+            }
+        }
+    }
+
+    /** A filled diamond, the shape of a charge node or a rune. */
+    static void diamond(GuiGraphicsExtractor graphics, int centerX, int centerY, int radius, int color) {
+        for (int row = -radius; row <= radius; row++) {
+            int span = radius - Math.abs(row);
+            graphics.fill(centerX - span, centerY + row, centerX + span + 1, centerY + row + 1, color);
+        }
+    }
+
+    /** A warning triangle with an exclamation mark, drawn from horizontal spans. */
+    static void warningGlyph(GuiGraphicsExtractor graphics, int centerX, int top, int size, int color, int markColor) {
+        for (int row = 0; row < size; row++) {
+            int span = Math.round(row * 0.58F);
+            graphics.fill(centerX - span, top + row, centerX + span + 1, top + row + 1, color);
+        }
+        int markTop = top + Math.round(size * 0.34F);
+        int markBottom = top + Math.round(size * 0.72F);
+        int half = Math.max(1, size / 14);
+        graphics.fill(centerX - half, markTop, centerX + half + 1, markBottom, markColor);
+        graphics.fill(centerX - half, markBottom + half + 1, centerX + half + 1, markBottom + half * 3 + 2, markColor);
+    }
+
+    /** {@code text} drawn {@code scale} times larger, centred on {@code centerX}. */
+    static void bigText(GuiGraphicsExtractor graphics, Font font, String text, int centerX, int y, float scale,
+            int color, boolean shadow) {
+        if (((color >>> 24) & 255) < 8 || text.isEmpty()) {
+            return;
+        }
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(centerX - font.width(text) * scale / 2.0F, y);
+        graphics.pose().scale(scale, scale);
+        graphics.text(font, text, 0, 0, color, shadow);
+        graphics.pose().popMatrix();
+    }
+
+    /** A thin progress bar. */
+    static void bar(GuiGraphicsExtractor graphics, int x, int y, int width, int height, float progress, int track,
+            int fill) {
+        if (width <= 0 || height <= 0) {
+            return;
+        }
+        graphics.fill(x, y, x + width, y + height, track);
+        int filled = Math.round(width * AnchorsTheme.clamp01(progress));
+        if (filled > 0) {
+            graphics.fill(x, y, x + filled, y + height, fill);
+        }
+    }
+
+    private static int fade(int color, float factor) {
+        return AnchorsTheme.fade(color, factor);
+    }
+
     /** A pixel ring from horizontal spans. */
     static void ring(GuiGraphicsExtractor graphics, int centerX, int centerY, int radius, int thickness, int color) {
         if (radius <= 0 || ((color >>> 24) & 255) < 4) {

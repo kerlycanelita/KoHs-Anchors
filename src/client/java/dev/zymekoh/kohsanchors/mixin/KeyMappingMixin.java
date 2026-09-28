@@ -10,12 +10,19 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
  * Notes the order of presses. {@code click} is where the keyboard and mouse handlers count a
- * press for every mapping bound to that key; this only watches it and changes nothing.
+ * press for every mapping bound to that key, remapped or not; the notes read it, and only the
+ * advanced instant detonation acts on it after it is counted.
  */
 @Mixin(KeyMapping.class)
 abstract class KeyMappingMixin {
     @Inject(method = "click", at = @At("HEAD"))
     private static void kohsAnchors$notePress(InputConstants.Key key, CallbackInfo callback) {
         AnchorInput.onKeyClicked(key);
+    }
+
+    /** After the press is counted: a certain detonation is shown now, not on the next tick. */
+    @Inject(method = "click", at = @At("TAIL"))
+    private static void kohsAnchors$afterPress(InputConstants.Key key, CallbackInfo callback) {
+        AnchorInput.afterKeyClicked(key);
     }
 }

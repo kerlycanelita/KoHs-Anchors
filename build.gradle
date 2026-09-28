@@ -102,6 +102,9 @@ if (era != 'modern') {
 			if (era == 'legacy') {
 				// pick() is public on 1.21.11's GameRenderer; there is nothing to invoke.
 				exclude 'dev/zymekoh/kohsanchors/mixin/MinecraftPickInvoker.java'
+				// Sodium's chunk copy is only veiled on 26.x: the remapped 1.21.11 build cannot
+				// name a class it has no mappings for.
+				exclude 'dev/zymekoh/kohsanchors/mixin/SodiumLevelSliceMixin.java'
 				filesMatching('dev/zymekoh/kohsanchors/gui/**') {
 					filter { line -> legacyGuiTransform(line) }
 				}
@@ -166,7 +169,7 @@ processClientResources {
 	filesMatching('kohs_anchors.client.mixins.json') {
 		filter { line ->
 			if (era == 'legacy') {
-				if (line.contains('"MinecraftPickInvoker"')) {
+				if (line.contains('"MinecraftPickInvoker"') || line.contains('"SodiumLevelSliceMixin"')) {
 					return null
 				}
 				return line.replace('JAVA_25', 'JAVA_21')

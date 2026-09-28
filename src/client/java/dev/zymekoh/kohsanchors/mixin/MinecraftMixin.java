@@ -9,9 +9,15 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-/** The three moments of {@code handleKeybinds} that anchor input needs. */
+/** The client tick, and the three moments of {@code handleKeybinds} that anchor input needs. */
 @Mixin(Minecraft.class)
 abstract class MinecraftMixin {
+    /** Every client tick, screen or not: drawn anchors and shown detonations expire here. */
+    @Inject(method = "tick", at = @At("HEAD"))
+    private void kohsAnchors$tick(CallbackInfo callback) {
+        AnchorInput.tick((Minecraft) (Object) this);
+    }
+
     @Inject(method = "handleKeybinds", at = @At("HEAD"))
     private void kohsAnchors$beginPass(CallbackInfo callback) {
         AnchorInput.beginPass((Minecraft) (Object) this);

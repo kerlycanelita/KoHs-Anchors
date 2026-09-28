@@ -92,6 +92,21 @@ public final class AnchorsConfig {
         /** Joins a second use with the same item in the same tick to the first, in anchor play. */
         public boolean noStacking = true;
 
+        /** Draws a detonated anchor as gone the moment it is used; the world is not changed. */
+        public boolean hideDetonating = true;
+
+        /**
+         * Advanced, not secure: clicks on an exploding anchor are sent at once instead of waiting
+         * for the server's removal, and what they will do is drawn at once. Off by default.
+         */
+        public boolean fastChain = false;
+
+        /**
+         * Advanced, not secure: a click that detonates an anchor is sent the moment it is pressed,
+         * between client ticks, instead of on the next tick. Off by default.
+         */
+        public boolean instantDetonation = false;
+
         /** Shows and plays a detonation the moment the anchor is used. */
         public boolean predictDetonation = true;
 
