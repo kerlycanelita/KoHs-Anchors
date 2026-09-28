@@ -148,6 +148,24 @@ def check_version(version):
         elif not sound[0] < flash[0] < debris[0]:
             # DetonationPredictor decides on the sound and reuses the decision for the next two.
             problems.append("handleExplosion no longer plays sound, then flash, then debris")
+
+    # The early-click hold is released when the server's state for the anchor arrives, which
+    # ClientLevelServerStateMixin sees at the head of setServerVerifiedBlockState.
+    level = disassemble(version, "net.minecraft.client.multiplayer.ClientLevel")
+    if not re.search(r"public void setServerVerifiedBlockState\(net\.minecraft\.core\.BlockPos, "
+                     r"net\.minecraft\.world\.level\.block\.state\.BlockState, int\);", level):
+        problems.append("ClientLevel.setServerVerifiedBlockState(BlockPos, BlockState, int) is missing")
+    reporters = []
+    current = None
+    for line in listener.splitlines():
+        if re.match(r"^  \S", line):
+            current = line
+        elif "ClientLevel.setServerVerifiedBlockState:" in line and current is not None:
+            reporters.append(current)
+    # handleBlockUpdate, plus the section-update lambda (lambda$handleChunkBlocksUpdate$0, or
+    # method_34007 in the remapped 1.21.11 jar).
+    if not any(" handleBlockUpdate(" in line for line in reporters) or len(reporters) < 2:
+        problems.append("block and section updates no longer arrive through setServerVerifiedBlockState")
     return problems
 
 

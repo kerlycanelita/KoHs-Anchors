@@ -86,6 +86,12 @@ public final class AnchorsConfig {
         /** Aims each extra use in a tick at what the crosshair hits after the previous one. */
         public boolean freshTarget = true;
 
+        /** Holds a click aimed at an anchor this client just detonated until the server removes it. */
+        public boolean holdEarlyClicks = true;
+
+        /** Joins a second use with the same item in the same tick to the first, in anchor play. */
+        public boolean noStacking = true;
+
         /** Shows and plays a detonation the moment the anchor is used. */
         public boolean predictDetonation = true;
 

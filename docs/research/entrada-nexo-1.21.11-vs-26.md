@@ -53,7 +53,7 @@ También cambió la explosión: desde 1.21.9 el paquete trae partículas de esco
 
 | Función | Categoría | ¿Lo ve el servidor? | Riesgo |
 | --- | --- | --- | --- |
-| Orden real de clics | Entrada (orden) | Sí: `slot → uso → slot → uso` en un tick, en vez de `slot → uso → uso` | Bajo–medio. Cada paquete es una pulsación real, ninguno extra, mismo tick. Sin verificar contra anticheats que cuenten cambios de slot por tick: probar en un servidor local con GrimAC antes de publicar. |
+| Orden real de clics | Entrada (orden) | Sí: `slot → uso → slot → uso` en un tick, en vez de `slot → uso → uso` | Bajo. Cada paquete es una pulsación real, ninguno extra, mismo tick. Probado contra Grim 2.3.74 con hasta +150 ms de lag: 0 alertas ([laboratorio](laboratorio-servidor-0.2.0.md)). |
 | Objetivo actualizado | Entrada (precisión) | Sí: el uso apunta al bloque nuevo | Bajo. Raycast de Vanilla, alcance intacto; es lo que Vanilla haría un frame después. |
 | Detonación instantánea | Cosmético | No | Ninguno. No borra bloques ni aplica daño. |
 | Escombros del nexo | Cosmético, calidad/rendimiento | No | Ninguno. Declarado como reducción de calidad visual. |
@@ -64,11 +64,14 @@ Descartado a propósito:
 - ejecutar usos fuera del tick, en el callback de entrada: el paquete llegaría con una rotación
   que el servidor aún no recibió y en un momento que Vanilla nunca usa;
 - elegir slots, cargar o detonar por el jugador;
-- convertir el nexo en aire en el mundo del cliente (desincroniza colisiones y movimiento).
+- convertir el nexo en aire en el mundo del cliente (desincroniza colisiones y movimiento). Un
+  borrador de la 0.2.0 lo probó en el laboratorio: Grim marca y cancela el clic siguiente
+  (`AirLiquidPlace`). La 0.2.0 retiene el clic temprano en su lugar.
 
 ## Pendiente
 
-- Probar en juego (26.2) la secuencia `nexo → usar → 2 → usar → 3 → usar` dentro de un tick, con
-  mouse, tecla remapeada, mano secundaria y alta latencia.
+- Hecho en el [laboratorio de servidor](laboratorio-servidor-0.2.0.md): la secuencia
+  `nexo → usar → 2 → usar → 3 → usar` dentro de un tick y a ritmo, en 26.2, con entrada por los
+  manejadores de teclado y ratón de Minecraft, contra Grim y con hasta +150 ms de lag. Falta
+  probarla con tecla remapeada, mano secundaria y manos humanas.
 - Medir la latencia del mallado del nexo en 1.21.11 y 26.2 (hipótesis de arriba).
-- Servidor local con GrimAC para la función de orden.

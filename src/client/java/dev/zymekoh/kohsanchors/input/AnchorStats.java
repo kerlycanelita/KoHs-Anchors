@@ -9,11 +9,14 @@ public final class AnchorStats {
     private static int retargetedUses;
     private static int predictedDetonations;
     private static int confirmedDetonations;
+    private static int heldClicks;
+    private static int mergedClicks;
+    private static int droppedClicks;
 
     private AnchorStats() {
     }
 
-    /** Bursts whose presses were applied in pressed order because Vanilla's order would differ. */
+    /** Bursts whose presses were applied in pressed order because a hotbar-first order could differ. */
     public static int orderedBursts() {
         return orderedBursts;
     }
@@ -30,6 +33,33 @@ public final class AnchorStats {
     /** Predictions the server then confirmed with its own explosion at the same block. */
     public static int confirmedDetonations() {
         return confirmedDetonations;
+    }
+
+    /** Clicks that waited for the server to remove a detonated anchor instead of hitting it. */
+    public static int heldClicks() {
+        return heldClicks;
+    }
+
+    /** Repeat clicks with the same item on an exploding anchor, folded into the one already waiting. */
+    public static int mergedClicks() {
+        return mergedClicks;
+    }
+
+    /** Waiting clicks dropped because their anchor was never removed by the server. */
+    public static int droppedClicks() {
+        return droppedClicks;
+    }
+
+    static void heldClick() {
+        heldClicks++;
+    }
+
+    static void mergedClick() {
+        mergedClicks++;
+    }
+
+    static void droppedClicks(int count) {
+        droppedClicks += count;
     }
 
     static void orderedBurst() {

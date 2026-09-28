@@ -57,7 +57,8 @@ def legacyGuiTransform = { String line -> line
 		.replace('extractBackground', 'renderBackground')
 		.replace('extractRenderState', 'render')
 		.replace('extractPanorama', 'renderPanorama')
-		.replace('graphics.text(', 'graphics.drawString(') }
+		.replace('graphics.text(', 'graphics.drawString(')
+		.replace('graphics.entity(', 'graphics.submitEntityRenderState(') }
 
 repositories {
 	maven {
@@ -93,8 +94,11 @@ if (era != 'modern') {
 		inputs.property 'minecraftVersion', mc
 		inputs.property 'era', era
 
+		// Every file of the era's overlay replaces the 26.2 file at the same path.
+		def overlay = file("src/compat/${era}/java")
+		def replaced = fileTree(overlay).files.collect { overlay.toPath().relativize(it.toPath()).toString().replace(File.separator, '/') }
 		from('src/client/java') {
-			exclude 'dev/zymekoh/kohsanchors/compat/Mc.java'
+			exclude replaced
 			if (era == 'legacy') {
 				// pick() is public on 1.21.11's GameRenderer; there is nothing to invoke.
 				exclude 'dev/zymekoh/kohsanchors/mixin/MinecraftPickInvoker.java'

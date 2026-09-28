@@ -3,7 +3,9 @@ package dev.zymekoh.kohsanchors.predict;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.input.AnchorStats;
 import java.util.ArrayDeque;
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -21,18 +23,29 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * Shows a charged anchor's detonation the moment the player uses it, instead of one round trip
- * later.
+ * Knows, from the client's side, that an anchor is about to explode, and acts on it without
+ * touching the world.
  *
  * <p>Outside the dimensions where anchors set a spawn point, using a charged anchor makes the
  * server explode it; the client only learns this when the server's explosion packet arrives. The
  * client already has everything needed to know it will happen (the charge and the dimension's
- * rule), so the explosion's sound and flash are played locally on the tick of the press.</p>
+ * rule), so:</p>
  *
- * <p>Nothing else is predicted: no block is removed, nobody takes damage or knockback, and the
- * world is not touched. When the server's explosion arrives for the same block, its sound and
- * flash are skipped because they already played; its debris, knockback and block changes apply
- * as always. A prediction the server never confirms simply expires.</p>
+ * <ul>
+ *   <li>the explosion's sound and flash are played on the tick of the press, and not again when
+ *   the server's explosion arrives for the same block (its debris and knockback apply as
+ *   always);</li>
+ *   <li>the anchor is remembered as detonating until the server removes it, so a click aimed at
+ *   it in the meantime can wait for the free block instead of landing on the old anchor.</li>
+ * </ul>
+ *
+ * <h2>Why the anchor is not removed on the client</h2>
+ *
+ * <p>Removing it at once lets the next anchor go down before the server's removal reaches the
+ * client. The KoHs Anchor lab measured exactly that on a Grim Anticheat server: Grim models the
+ * block from what the client has received, still sees the old anchor's block as it was when the
+ * next click arrives, flags {@code AirLiquidPlace} and cancels the click. A Vanilla client cannot
+ * produce that sequence, so the block is left to the server and early clicks are held instead.</p>
  */
 public final class DetonationPredictor {
     /** Longer than any round trip worth playing on; a later explosion is treated as a new one. */
@@ -41,6 +54,8 @@ public final class DetonationPredictor {
     private static final double SAME_CENTER = 1.0E-3;
 
     private static final ArrayDeque<Pending> PENDING = new ArrayDeque<>();
+    /** Anchors this client detonated that the server has not removed yet, with when. */
+    private static final Map<BlockPos, Long> DETONATING = new HashMap<>();
 
     /** Whether the explosion packet being handled right now was already shown. */
     private static boolean handlingPredicted;
@@ -54,7 +69,7 @@ public final class DetonationPredictor {
      */
     public static void onAnchorUsed(Level level, BlockPos position, BlockState state, Player player,
             InteractionResult result) {
-        if (!AnchorsConfig.settings().predictDetonation || !(level instanceof ClientLevel clientLevel)) {
+        if (!(level instanceof ClientLevel clientLevel)) {
             return;
         }
         if (player != Minecraft.getInstance().player || !(result instanceof InteractionResult.Success)) {
@@ -70,6 +85,10 @@ public final class DetonationPredictor {
         }
 
         long now = System.nanoTime();
+        DETONATING.put(position.immutable(), now);
+        if (!AnchorsConfig.settings().predictDetonation) {
+            return;
+        }
         expire(now);
         if (PENDING.size() >= MAX_PENDING) {
             PENDING.pollFirst();
@@ -84,6 +103,29 @@ public final class DetonationPredictor {
                 SoundSource.BLOCKS, 4.0F, (1.0F + (random.nextFloat() - random.nextFloat()) * 0.2F) * 0.7F, false);
         clientLevel.addParticle(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 1.0D, 0.0D, 0.0D);
         AnchorStats.predictedDetonation();
+    }
+
+    /**
+     * Whether the client detonated the anchor at {@code position} and the server has not removed
+     * it yet. A detonation the server never answers stops counting after the confirm window.
+     */
+    public static boolean isDetonating(BlockPos position) {
+        Long since = DETONATING.get(position);
+        if (since == null) {
+            return false;
+        }
+        if (System.nanoTime() - since > CONFIRM_WINDOW_NANOS) {
+            DETONATING.remove(position);
+            return false;
+        }
+        return true;
+    }
+
+    /** Every block state the server sends. Anything but an anchor means the anchor is gone. */
+    public static void onServerBlock(BlockPos position, BlockState state) {
+        if (!DETONATING.isEmpty() && !state.is(Blocks.RESPAWN_ANCHOR)) {
+            DETONATING.remove(position);
+        }
     }
 
     /**

@@ -5,11 +5,11 @@
   "kohs_anchors.section.feedback": "Feedback",
   "kohs_anchors.section.interface": "Interface",
   "kohs_anchors.option.input_order": "Pressed order",
-  "kohs_anchors.option.input_order.description": "When use and hotbar keys land in the same tick, they are applied in the order you pressed them. Vanilla applies every number key first, so a fast place, glowstone, detonate could use the wrong item.",
+  "kohs_anchors.option.input_order.description": "When use and hotbar keys land in the same tick, they are applied in the order you pressed them, and the last key you pressed stays selected. Vanilla applies every number key first, and hotbar order mods pick one on their own, so a fast place, glowstone, detonate could use the wrong item.",
   "kohs_anchors.option.fresh_target": "Fresh target",
-  "kohs_anchors.option.fresh_target.description": "A second use in the same tick aims at what your crosshair hits after the first one, like the anchor you just placed, instead of the block that was there before.",
+  "kohs_anchors.option.fresh_target.description": "A second use in the same tick, after you switched items, aims at what your crosshair hits after the first one, like the anchor you just placed, instead of the block that was there before. A repeat with the same item keeps its target, so it never stacks an anchor.",
   "kohs_anchors.option.predict_detonation": "Instant detonation",
-  "kohs_anchors.option.predict_detonation.description": "The explosion's sound and flash play the moment you use a charged anchor, not one round trip later. Damage, knockback and blocks still come from the server.",
+  "kohs_anchors.option.predict_detonation.description": "The explosion's sound and flash play the moment you use a charged anchor, not one round trip later. The block itself, damage and knockback still come from the server.",
   "kohs_anchors.option.anchor_debris": "Anchor explosion debris",
   "kohs_anchors.option.anchor_debris.description": "Block debris particles of anchor explosions. Turning them off saves frames in anchor fights; other explosions keep theirs.",
   "kohs_anchors.option.interface_motion": "Interface animations",
@@ -23,5 +23,11 @@
   "kohs_anchors.stats.confirmed": "Confirmed by the server",
   "kohs_anchors.footer.note": "Every action is your own click. The server decides.",
   "kohs_anchors.button.reset": "Defaults",
-  "kohs_anchors.button.done": "Done"
+  "kohs_anchors.button.done": "Done",
+  "kohs_anchors.preview.hint": "Drag: turn · Wheel: zoom · Click: charge",
+  "kohs_anchors.option.hold_early_clicks": "Early clicks wait",
+  "kohs_anchors.option.hold_early_clicks.description": "A click on an anchor you just detonated, made before the server has removed it, waits and lands the moment the block is free, instead of being spent on the old anchor. Place the next one without waiting to see the explosion. Clicking again with the same item joins the waiting click instead of stacking another anchor.",
+  "kohs_anchors.stats.held": "Early clicks that waited",
+  "kohs_anchors.option.no_stacking": "No stacked anchors",
+  "kohs_anchors.option.no_stacking.description": "A second click with the same item in the same tick is a double click. With anchors it can only fail or, on grass, snow or the fire an explosion leaves, stack a second anchor on the first, so it joins the first one. Charging with glowstone is not limited."
 }

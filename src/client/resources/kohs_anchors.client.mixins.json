@@ -4,6 +4,7 @@
   "package": "dev.zymekoh.kohsanchors.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
+    "ClientLevelServerStateMixin",
     "ClientPacketListenerMixin",
     "KeyMappingAccessor",
     "KeyMappingMixin",

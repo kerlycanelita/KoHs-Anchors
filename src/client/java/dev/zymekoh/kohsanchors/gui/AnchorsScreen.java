@@ -11,6 +11,7 @@ import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.events.GuiEventListener;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.input.MouseButtonEvent;
 import net.minecraft.network.chat.Component;
 import net.minecraft.util.Mth;
 
@@ -30,7 +31,7 @@ public final class AnchorsScreen extends Screen {
     private static final int SECTION_GAP = 6;
     private static final int ROW_GAP = 4;
     private static final int STAT_LINE = 11;
-    private static final int STATS_HEIGHT = 13 + STAT_LINE * 4;
+    private static final int STATS_HEIGHT = 13 + STAT_LINE * 5;
     private static final double CYCLE_SECONDS = 4.8D;
 
     private final Screen parent;
@@ -38,8 +39,10 @@ public final class AnchorsScreen extends Screen {
     private final List<AnchorSwitchRow> rows = new ArrayList<>();
     private final List<Integer> rowOffsets = new ArrayList<>();
     private final List<Section> sections = new ArrayList<>();
+    private final AnchorPreview anchorPreview = new AnchorPreview();
 
     private AnchorsLayout layout;
+    private AnchorsLayout.Rect previewArt = AnchorsLayout.Rect.EMPTY;
     private int statsOffset = -1;
     private int contentHeight;
     private int maxScroll;
@@ -51,14 +54,12 @@ public final class AnchorsScreen extends Screen {
     private GuiEventListener lastFocused;
 
     private String subtitle = "";
+    private String previewHint = "";
     private String footerNote = "";
     private String statsTitle = "";
     private String[] statLabels = new String[0];
 
     private float anchorCharge;
-    private float anchorGlow;
-    private float anchorBlast;
-    private float anchorAlpha;
 
     public AnchorsScreen(Screen parent) {
         super(Component.translatable("kohs_anchors.screen.title"));
@@ -79,14 +80,22 @@ public final class AnchorsScreen extends Screen {
         this.lastFocused = null;
         this.layout = AnchorsLayout.fit(this.width, this.height);
         this.subtitle = Component.translatable("kohs_anchors.screen.subtitle").getString();
+        this.previewHint = Component.translatable("kohs_anchors.preview.hint").getString();
         this.footerNote = Component.translatable("kohs_anchors.footer.note").getString();
         this.statsTitle = Component.translatable("kohs_anchors.stats.title").getString();
         this.statLabels = new String[] {
                 Component.translatable("kohs_anchors.stats.ordered").getString(),
                 Component.translatable("kohs_anchors.stats.retargeted").getString(),
+                Component.translatable("kohs_anchors.stats.held").getString(),
                 Component.translatable("kohs_anchors.stats.predicted").getString(),
                 Component.translatable("kohs_anchors.stats.confirmed").getString()
         };
+
+        AnchorsLayout.Rect preview = this.layout.preview;
+        this.previewArt = this.layout.showsPreview()
+                ? new AnchorsLayout.Rect(preview.x() + 4, preview.y() + 4, preview.width() - 8,
+                        Math.max(0, preview.height() - STATS_HEIGHT - 20))
+                : AnchorsLayout.Rect.EMPTY;
 
         this.rows.clear();
         this.rowOffsets.clear();
@@ -116,6 +125,14 @@ public final class AnchorsScreen extends Screen {
             AnchorsConfig.Settings settings = AnchorsConfig.settings();
             settings.freshTarget = !settings.freshTarget;
         });
+        offset = row(offset, "hold_early_clicks", () -> AnchorsConfig.settings().holdEarlyClicks, () -> {
+            AnchorsConfig.Settings settings = AnchorsConfig.settings();
+            settings.holdEarlyClicks = !settings.holdEarlyClicks;
+        });
+        offset = row(offset, "no_stacking", () -> AnchorsConfig.settings().noStacking, () -> {
+            AnchorsConfig.Settings settings = AnchorsConfig.settings();
+            settings.noStacking = !settings.noStacking;
+        });
         offset = section(offset, "kohs_anchors.section.feedback");
         offset = row(offset, "predict_detonation", () -> AnchorsConfig.settings().predictDetonation, () -> {
             AnchorsConfig.Settings settings = AnchorsConfig.settings();
@@ -135,7 +152,7 @@ public final class AnchorsScreen extends Screen {
             // Without the anchor column the session numbers move to the end of the list.
             offset = section(offset, "kohs_anchors.stats.title");
             this.statsOffset = offset - SECTION_HEIGHT;
-            offset += STAT_LINE * 4;
+            offset += STAT_LINE * 5;
         }
         this.contentHeight = offset + 2;
     }
@@ -203,7 +220,7 @@ public final class AnchorsScreen extends Screen {
         drawHeader(graphics, intro, seconds);
         drawOptions(graphics, mouseX, mouseY, partialTick, now, motion);
         if (this.layout.showsPreview()) {
-            drawPreview(graphics, intro, seconds);
+            drawPreview(graphics, mouseX, mouseY, intro, motion);
         }
         drawFooterNote(graphics, intro);
         super.extractRenderState(graphics, mouseX, mouseY, partialTick);
@@ -325,24 +342,17 @@ public final class AnchorsScreen extends Screen {
         }
     }
 
-    private void drawPreview(GuiGraphicsExtractor graphics, float intro, double seconds) {
+    private void drawPreview(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float intro, boolean motion) {
         AnchorsLayout.Rect preview = this.layout.preview;
         AnchorsUi.panel(graphics, preview.x(), preview.y(), preview.width(), preview.height(),
                 AnchorsTheme.fade(AnchorsTheme.CARD, intro), AnchorsTheme.fade(0x1C12061E, intro));
+        boolean hovered = this.previewArt.contains(mouseX, mouseY);
         AnchorsUi.roundedOutline(graphics, preview.x(), preview.y(), preview.width(), preview.height(),
-                AnchorsTheme.fade(AnchorsTheme.CARD_BORDER, intro));
+                AnchorsTheme.fade(hovered ? AnchorsTheme.CARD_BORDER_HOVER : AnchorsTheme.CARD_BORDER, intro));
+
+        this.anchorPreview.render(graphics, this.font, this.previewArt, mouseX, mouseY, motion, intro, this.previewHint);
 
         int statsTop = preview.bottom() - STATS_HEIGHT - 8;
-        int artTop = preview.y() + 6;
-        int artHeight = statsTop - artTop - 4;
-        int unit = Math.min(6, Math.min((preview.width() - 28) / 16, (artHeight - 20) / 16));
-        if (unit >= 2) {
-            // The blast ring is wider than the card; it stays inside it.
-            graphics.enableScissor(preview.x() + 1, preview.y() + 1, preview.right() - 1, statsTop - 2);
-            AnchorsUi.anchor(graphics, preview.centerX(), artTop + artHeight / 2, unit, this.anchorCharge,
-                    this.anchorGlow, this.anchorBlast, this.anchorAlpha * intro, seconds);
-            graphics.disableScissor();
-        }
         graphics.fill(preview.x() + 8, statsTop - 1, preview.right() - 8, statsTop,
                 AnchorsTheme.withAlpha(AnchorsTheme.ACCENT, Math.round(60 * intro)));
         drawStats(graphics, preview.x() + 8, statsTop + 4, preview.width() - 16, intro, true);
@@ -358,6 +368,7 @@ public final class AnchorsScreen extends Screen {
         int[] values = {
                 AnchorStats.orderedBursts(),
                 AnchorStats.retargetedUses(),
+                AnchorStats.heldClicks(),
                 AnchorStats.predictedDetonations(),
                 AnchorStats.confirmedDetonations()
         };
@@ -384,40 +395,14 @@ public final class AnchorsScreen extends Screen {
                 footer.y() + (footer.height() - 8) / 2 + 1, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro), false);
     }
 
-    /**
-     * The anchor in the preview: it charges one light at a time, glows, detonates and is placed
-     * again. With interface animations off it stays fully charged and still.
-     */
+    /** The header's small anchor charges one light at a time and starts over. */
     private void updateAnchorCycle(double seconds, boolean motion) {
-        this.anchorBlast = -1.0F;
-        this.anchorAlpha = 1.0F;
-        this.anchorGlow = 0.0F;
         if (!motion) {
             this.anchorCharge = 4.0F;
-            this.anchorGlow = 0.6F;
             return;
         }
         double time = seconds % CYCLE_SECONDS;
-        if (time < 0.6D) {
-            this.anchorCharge = 0.0F;
-        } else if (time < 2.6D) {
-            double step = (time - 0.6D) / 0.5D;
-            int whole = (int) step;
-            float fraction = (float) (step - whole);
-            this.anchorCharge = Math.min(4.0F, whole + AnchorsTheme.easeOutCubic(fraction * 3.0F));
-        } else if (time < 3.2D) {
-            this.anchorCharge = 4.0F;
-            this.anchorGlow = 0.5F + 0.5F * (float) Math.sin((time - 2.6D) * 18.0D);
-        } else if (time < 3.9D) {
-            this.anchorCharge = 4.0F;
-            this.anchorGlow = 1.0F;
-            this.anchorBlast = (float) ((time - 3.2D) / 0.7D);
-        } else if (time < 4.4D) {
-            this.anchorCharge = 0.0F;
-            this.anchorAlpha = AnchorsTheme.easeInOutSine((float) ((time - 3.9D) / 0.5D));
-        } else {
-            this.anchorCharge = 0.0F;
-        }
+        this.anchorCharge = time < 0.6D ? 0.0F : (float) Math.min(4.0D, (time - 0.6D) / 0.5D);
     }
 
     // ------------------------------------------------------------------------------------------
@@ -425,7 +410,34 @@ public final class AnchorsScreen extends Screen {
     // ------------------------------------------------------------------------------------------
 
     @Override
+    public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (this.anchorPreview.mouseClicked(this.previewArt, event.x(), event.y(), event.button(), doubleClick)) {
+            return true;
+        }
+        return super.mouseClicked(event, doubleClick);
+    }
+
+    @Override
+    public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (this.anchorPreview.mouseDragged(dragX, dragY)) {
+            return true;
+        }
+        return super.mouseDragged(event, dragX, dragY);
+    }
+
+    @Override
+    public boolean mouseReleased(MouseButtonEvent event) {
+        if (this.anchorPreview.mouseReleased()) {
+            return true;
+        }
+        return super.mouseReleased(event);
+    }
+
+    @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        if (this.anchorPreview.mouseScrolled(this.previewArt, mouseX, mouseY, verticalAmount)) {
+            return true;
+        }
         if (this.maxScroll > 0 && verticalAmount != 0.0D && this.layout.options.contains(mouseX, mouseY)) {
             this.scrollTarget = Mth.clamp(this.scrollTarget - (float) verticalAmount * 22.0F, 0.0F, this.maxScroll);
             return true;

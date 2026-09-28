@@ -86,6 +86,12 @@ final class AnchorsTheme {
         return 1.0F - inverse * inverse * inverse;
     }
 
+    /** Overshoots a little before settling, for things that pop into place. */
+    static float easeOutBack(float value) {
+        float shifted = clamp01(value) - 1.0F;
+        return 1.0F + 2.70158F * shifted * shifted * shifted + 1.70158F * shifted * shifted;
+    }
+
     static float easeInOutSine(float value) {
         return (float) (0.5D - 0.5D * Math.cos(Math.PI * clamp01(value)));
     }

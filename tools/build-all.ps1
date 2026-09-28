@@ -10,7 +10,10 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
-if (-not $env:JAVA_HOME) {
+# Gradle needs JDK 25; an inherited JAVA_HOME can point to an older or removed JDK.
+$release = if ($env:JAVA_HOME) { Join-Path $env:JAVA_HOME 'release' } else { $null }
+if (-not $release -or -not (Test-Path $release) -or
+        -not (Select-String -Path $release -Pattern 'JAVA_VERSION="(2[5-9]|[3-9][0-9])' -Quiet)) {
     $env:JAVA_HOME = 'C:\Program Files\Eclipse Adoptium\jdk-25.0.4.101-hotspot'
 }
 
