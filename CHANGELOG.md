@@ -1,9 +1,104 @@
 # Changelog
 
+## 0.4.0 — unreleased
+
+Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.2; see
+[the 0.4.0 notes](docs/research/anchors-0.4.0.md).
+
+### Clicks and ticks
+
+- **Vanilla's tick shape.** A burst in pressed order now goes out one slot change per tick, before
+  that tick's clicks, as Vanilla sends it; the rest waits for the next tick, still in pressed order
+  and in Vanilla's own counters. Nothing for Grim's `PacketOrderE` or `MultiPlace` to see: 100 % of
+  anchors and 0 alerts next to Herzium against Grim in its strict configuration.
+- Pressed order, fresh target, early clicks, no stacking and the instant detonation effects are
+  always on and no longer options.
+- **Anchor debounce** and **glowstone debounce** (new, off by default): a second anchor or glowstone
+  with the same slot sooner than the chosen time is refused before anything is predicted or sent.
+  Switching slots ends the wait; detonations are never refused.
+- **Glowstone guard** (new, off by default): in an anchor fight glowstone only charges anchors; a
+  click that would put it down as a block is dropped. It rules out the safe anchor, so turning it on
+  shows a safe anchor clip first (H.264 at 60 fps, decoded with JCodec on a background thread) and
+  then an animated charge with the respawn anchor's sounds.
+
+### Detonation
+
+- The hidden detonated anchor also takes its light with it: the client's light engine sees the
+  drawn air, so no ghost light is left for a round trip. It comes back if the server keeps the anchor.
+- The veil lifts after a wait that follows the connection (three round trips and a quarter second)
+  instead of a fixed time.
+- **Explosion smoke** (new): Vanilla, one light puff, or none. Other explosions keep theirs.
+
+### Anchor custom (new tab)
+
+- A workshop with the 3D anchor: colour the frame and the glow layers while keeping their texture,
+  give each charge light its own colour, or paint pixel by pixel with brush, eraser, eyedropper,
+  fill and undo. It reads the resource pack's anchor texture, and the skin reaches every anchor in the
+  world at once.
+- **KoHs Crystal Tweaks colours**: one click translates your crystal colours to the anchor (frame,
+  glow, charge lights, light and enemy colour) and keeps them in step. `crystal_tweaks.json` is only
+  read.
+
+### Glow anchors (new tab)
+
+- Charged anchors give off light: emissive pixels, a bloom shaped by them, and light on the blocks
+  around that spreads through the air like the game's own, round corners and down a pillar, with
+  smooth corners. Walls hide it.
+- Colour from the texture or a custom one; power, bloom, light on the surroundings, emissive pixels,
+  breathing and growth with the charge.
+- Three qualities (performance, balanced, quality). Anchors out of view and faces turned away are
+  never drawn, the bloom steps down with distance, only the nearest anchors light their
+  surroundings, and a vertex budget caps the frame: 64 charged anchors in view went from 353
+  thousand vertices a frame to a fraction of that.
+- **Enemy anchors**: the ones that appear where you placed none glow in their own colour, with a page
+  of their own. Your placements are told apart by the server's acknowledgement of each click, so
+  another player reusing your hole right after you still counts as an enemy. Switching to their page
+  plays an animation (your anchor rises, the screen turns red, theirs takes its place, and back), and
+  the first time a window says what they are, with "Don't show again".
+
+### Sounds (new tab)
+
+- Replace the anchor charge and explosion sounds with any sound the game knows, with volume, pitch
+  and a preview.
+
+### Herzium (new tab)
+
+- Herzium's hotbar order moves here. It is read from Herzium's own config and changed through
+  Herzium, which saves it; last input is marked as the recommended order. The first time, a window
+  explains both mods and Herzium's three orders.
+- **Better communication with Herzium orders** (new, on by default): the hotbar keys a burst applies
+  are reported to Herzium, and Herzium's hotbar preview is dropped when a burst is about to use
+  another item. Measured with Herzium 1.10.7: without it the hotbar showed the sword for a tick while
+  the anchor was placed; with it, the anchor.
+- Without Herzium the tab is dimmed and opens a window with Modrinth's turning logo and a link to
+  Herzium's page.
+
+### KoHs (new tab)
+
+- Zymery Dria, who makes KoHs Anchor's, drawn as on the KoHs Mod Suite site and animated layer by
+  layer, with her aka, what she does, links to Discord, the site and Modrinth, and "KoHs on top".
+
+### Advanced options and safety
+
+- The not secure options take a second, held warning, and only act in singleplayer, on the local
+  network and on servers allowed one by one; anywhere else they are suspended and the player is asked
+  once per connection. Allowed servers are kept in memory only, never saved or shown.
+- **Developer mode** (new): names become the code behind them, and an inspector shows what every
+  part of the screen is (F12 hides it).
+
+### Interface
+
+- Seven tabs; the anchor cycle time (last and best) in the session numbers.
+- Faster settings screen: shapes drawn from many spans get a GUI stratum of their own, which had cost
+  the screen half its frame rate.
+- `checkLayout` also checks the tabs, the glowstone guard window and the explaining windows at every
+  size.
+- New icon. Every text in English and seven Spanish locales.
+
 ## 0.3.0 — unreleased
 
 Why Anchor Optimizer felt faster, and the answer, with a new settings screen. See
-[the write-up](docs/research/opciones-avanzadas-0.3.0.md). Not measured yet.
+[the write-up](docs/research/advanced-options-0.3.0.md). Not measured yet.
 
 - **Hide detonated anchor** (new, on by default): a detonated anchor disappears from the chunk
   mesh (Vanilla and Sodium) and its outline the moment it is used. Drawing only: the block, its
@@ -29,7 +124,7 @@ Why Anchor Optimizer felt faster, and the answer, with a new settings screen. Se
 
 Anchor bursts that went wrong next to Herzium's last-input hotbar order, reproduced with the
 player's own setup (use on the period key, Herzium 1.10.5, the mctiers anchor hotbar) in the KoHs
-Anchor lab. See [the write-up](docs/research/nexo-y-herzium-0.2.1.md).
+Anchor lab. See [the write-up](docs/research/anchors-and-herzium-0.2.1.md).
 
 - Pressed order covers every burst that mixes number keys and uses, unless all its number keys
   come before its uses and are the same slot. 0.2.0 only checked whether a use got a different
@@ -53,7 +148,7 @@ Anchor lab. See [the write-up](docs/research/nexo-y-herzium-0.2.1.md).
 
 Measured on a local Minecraft 26.2 server with Grim Anticheat and 0 to 150 ms of added latency:
 152–165 ms per anchor when clicking every 50 ms, every anchor exploded, no wasted click and no
-Grim alert. See [the lab write-up](docs/research/laboratorio-servidor-0.2.0.md).
+Grim alert. See [the lab write-up](docs/research/server-lab-0.2.0.md).
 
 - Early clicks wait: a click on an anchor this client just detonated waits until the server's
   removal arrives, then lands on the free block with the item it was pressed with. At most six
