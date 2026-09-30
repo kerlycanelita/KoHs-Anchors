@@ -93,6 +93,24 @@ public final class AnchorsLayoutCheck {
             }
         }
 
+        // The anchor workshop shares the body between its two rails and the stage.
+        AnchorsLayout.Rect body = layout.body();
+        inside(size + "body", body, panel, failures);
+        AnchorsLayout.Workshop workshop = AnchorsLayout.workshop(body);
+        inside(size + "workshop left", workshop.left(), body, failures);
+        inside(size + "workshop stage", workshop.stage(), body, failures);
+        inside(size + "workshop right", workshop.right(), body, failures);
+        if (workshop.left().intersects(workshop.stage()) || workshop.stage().intersects(workshop.right())
+                || workshop.left().intersects(workshop.right())) {
+            failures.add(size + "workshop regions overlap");
+        }
+        if (workshop.stage().width() < 56) {
+            failures.add(size + "workshop stage too narrow for the anchor: " + workshop.stage());
+        }
+        if (workshop.right().width() < 104) {
+            failures.add(size + "workshop colour rail too narrow for the picker: " + workshop.right());
+        }
+
         AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
         inside(size + "modal", modal.box(), screen, failures);
         inside(size + "modal cancel", modal.cancel(), modal.box(), failures);
@@ -106,6 +124,72 @@ public final class AnchorsLayoutCheck {
         // The warning needs room for its title and at least three lines above the buttons.
         if (modal.cancel().y() - modal.box().y() < 70) {
             failures.add(size + "modal too short for the warning: " + modal.box());
+        }
+
+        // The explaining windows (Herzium): title, content and buttons apart and inside the box.
+        AnchorsLayout.InfoModal info = AnchorsLayout.infoModal(width, height);
+        inside(size + "info", info.box(), screen, failures);
+        inside(size + "info title", info.title(), info.box(), failures);
+        inside(size + "info content", info.content(), info.box(), failures);
+        inside(size + "info cancel", info.cancel(), info.box(), failures);
+        inside(size + "info confirm", info.confirm(), info.box(), failures);
+        if (info.cancel().intersects(info.confirm()) || info.content().intersects(info.cancel())
+                || info.content().intersects(info.confirm()) || info.content().intersects(info.title())) {
+            failures.add(size + "info window regions overlap");
+        }
+        if (info.confirm().width() < 60 || info.cancel().width() < 40 || info.confirm().height() < 12) {
+            failures.add(size + "info buttons too small: " + info.cancel() + " " + info.confirm());
+        }
+        // Room for a link line and a few lines of text on every screen.
+        if (info.content().height() < 60 || info.content().width() < 200) {
+            failures.add(size + "info content too small: " + info.content());
+        }
+
+        // The glowstone guard warning, with its text wrapped to one to five lines.
+        for (int lines = 1; lines <= 5; lines++) {
+            checkGuard(size + "guard (" + lines + " lines) ", AnchorsLayout.guardModal(width, height, lines, 854.0F / 480.0F),
+                    screen, lines, failures);
+        }
+    }
+
+    private static void checkGuard(String name, AnchorsLayout.GuardModal guard, AnchorsLayout.Rect screen, int lines,
+            List<String> failures) {
+        AnchorsLayout.Rect box = guard.box();
+        inside(name + "box", box, screen, failures);
+        inside(name + "title", guard.title(), box, failures);
+        inside(name + "cancel", guard.cancel(), box, failures);
+        inside(name + "confirm", guard.confirm(), box, failures);
+        inside(name + "text", guard.body(), box, failures);
+        if (guard.cancel().intersects(guard.confirm())) {
+            failures.add(name + "buttons overlap");
+        }
+        if (guard.confirm().width() < 60 || guard.cancel().width() < 40 || guard.confirm().height() < 12) {
+            failures.add(name + "buttons too small: " + guard.cancel() + " " + guard.confirm());
+        }
+        if (guard.body().bottom() > guard.cancel().y() || guard.body().y() < guard.title().bottom()) {
+            failures.add(name + "text overlaps the title or the buttons: " + guard.body());
+        }
+        // Up to three lines of text always fit whole; longer text may be cut on the smallest screens.
+        if (lines <= 3 && guard.body().height() < lines * 10) {
+            failures.add(name + "text cut: " + guard.body());
+        }
+        AnchorsLayout.Rect clip = guard.clip();
+        if (clip.width() > 0) {
+            inside(name + "clip", clip, box, failures);
+            if (clip.height() < AnchorsLayout.MIN_CLIP_HEIGHT) {
+                failures.add(name + "clip too small: " + clip);
+            }
+            if (clip.intersects(guard.title()) || clip.intersects(guard.body()) || clip.intersects(guard.cancel())
+                    || clip.intersects(guard.confirm())) {
+                failures.add(name + "clip overlaps the text or the buttons: " + clip);
+            }
+            float aspect = clip.width() / (float) clip.height();
+            if (Math.abs(aspect - 854.0F / 480.0F) > 0.06F) {
+                failures.add(name + "clip stretched: " + clip);
+            }
+        } else if (box.height() >= 250 && lines <= 3) {
+            // A screen this tall always has room for the clip.
+            failures.add(name + "clip dropped on a tall screen: " + box);
         }
     }
 

@@ -14,6 +14,15 @@ public final class AnchorStats {
     private static int droppedClicks;
     private static int chainedClicks;
     private static int instantDetonations;
+    private static int keptDetonations;
+    private static int debouncedAnchors;
+    private static int debouncedGlowstone;
+    private static int nextTickPresses;
+    private static int orderRisks;
+    private static int withdrawnDetonations;
+    private static int glowstoneGuarded;
+    private static long lastCycleMillis = -1L;
+    private static long bestCycleMillis = -1L;
 
     private AnchorStats() {
     }
@@ -60,6 +69,85 @@ public final class AnchorStats {
     /** Detonations sent the moment the click was pressed, by the advanced instant detonation. */
     public static int instantDetonations() {
         return instantDetonations;
+    }
+
+    /** Detonation clicks the server acknowledged without exploding the anchor, drawn again at once. */
+    public static int keptDetonations() {
+        return keptDetonations;
+    }
+
+    /** Anchor placements refused by the anchor debounce. */
+    public static int debouncedAnchors() {
+        return debouncedAnchors;
+    }
+
+    /** Glowstone uses refused by the glowstone debounce. */
+    public static int debouncedGlowstone() {
+        return debouncedGlowstone;
+    }
+
+    /** Presses of a burst applied on a later tick, so each tick changes slot at most once, first. */
+    public static int nextTickPresses() {
+        return nextTickPresses;
+    }
+
+    /** Slot changes sent after a click of the same tick; expected to stay 0. */
+    public static int orderRisks() {
+        return orderRisks;
+    }
+
+    static void nextTickPresses(int count) {
+        nextTickPresses += count;
+    }
+
+    static void orderRisk() {
+        orderRisks++;
+    }
+
+    /** Detonations shown at a press whose click then went to another block, taken back at once. */
+    public static int withdrawnDetonations() {
+        return withdrawnDetonations;
+    }
+
+    public static void withdrawnDetonation() {
+        withdrawnDetonations++;
+    }
+
+    /** Glowstone clicks the guard dropped, that would have gone down as a block. */
+    public static int glowstoneGuarded() {
+        return glowstoneGuarded;
+    }
+
+    static void glowstoneGuardedClick() {
+        glowstoneGuarded++;
+    }
+
+    /** The last and the best anchor cycle of the session, in milliseconds, or -1. */
+    public static long lastCycleMillis() {
+        return lastCycleMillis;
+    }
+
+    public static long bestCycleMillis() {
+        return bestCycleMillis;
+    }
+
+    static void anchorCycle(long millis) {
+        lastCycleMillis = millis;
+        if (bestCycleMillis < 0L || millis < bestCycleMillis) {
+            bestCycleMillis = millis;
+        }
+    }
+
+    public static void keptDetonation() {
+        keptDetonations++;
+    }
+
+    static void anchorDebounced() {
+        debouncedAnchors++;
+    }
+
+    static void glowstoneDebounced() {
+        debouncedGlowstone++;
     }
 
     static void chainedClick() {

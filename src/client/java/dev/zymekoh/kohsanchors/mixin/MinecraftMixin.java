@@ -1,7 +1,10 @@
 package dev.zymekoh.kohsanchors.mixin;
 
 import com.llamalad7.mixinextras.injector.v2.WrapWithCondition;
+import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
+import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import dev.zymekoh.kohsanchors.input.AnchorInput;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import org.objectweb.asm.Opcodes;
 import org.spongepowered.asm.mixin.Mixin;
@@ -18,9 +21,26 @@ abstract class MinecraftMixin {
         AnchorInput.tick((Minecraft) (Object) this);
     }
 
+    /** After the tick-end packet: the server's view of this tick is closed. */
+    @Inject(method = "tick", at = @At("TAIL"))
+    private void kohsAnchors$endTick(CallbackInfo callback) {
+        AnchorInput.endTick((Minecraft) (Object) this);
+    }
+
     @Inject(method = "handleKeybinds", at = @At("HEAD"))
     private void kohsAnchors$beginPass(CallbackInfo callback) {
         AnchorInput.beginPass((Minecraft) (Object) this);
+    }
+
+    /**
+     * Every press Vanilla takes in {@code handleKeybinds}: presses left for the next tick stay
+     * queued, so a tick never sends a slot change after one of its clicks. Chains with other mods
+     * wrapping the same calls, such as Herzium.
+     */
+    @WrapOperation(method = "handleKeybinds", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/KeyMapping;consumeClick()Z"))
+    private boolean kohsAnchors$tickShape(KeyMapping mapping, Operation<Boolean> original) {
+        return AnchorInput.mayConsume((Minecraft) (Object) this, mapping) && original.call(mapping);
     }
 
     /**

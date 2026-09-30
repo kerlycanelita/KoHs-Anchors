@@ -47,6 +47,24 @@ final class InputJournal {
     }
 
     /**
+     * Puts back, in front and in order, presses of a burst that wait for the next tick. They are
+     * still pending in Vanilla's counters; only their order is kept here.
+     */
+    void carry(int[] burst, int from, int count, long now) {
+        int keep = Math.min(count, CAPACITY - this.size);
+        System.arraycopy(this.actions, 0, this.actions, keep, this.size);
+        System.arraycopy(this.times, 0, this.times, keep, this.size);
+        for (int index = 0; index < keep; index++) {
+            this.actions[index] = burst[from + index];
+            this.times[index] = now;
+        }
+        this.size += keep;
+        if (keep < count) {
+            this.unusable = true;
+        }
+    }
+
+    /**
      * Moves the pending actions into {@code out} and empties the journal.
      *
      * @return how many actions were copied, or {@code -1} when the journal cannot be trusted for

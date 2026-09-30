@@ -93,4 +93,10 @@ public final class AnchorBlockPreview {
                 .setValue(RespawnAnchorBlock.CHARGE, Math.max(0, Math.min(4, charge)));
         return this.state;
     }
+
+    /** Any block, for the settings screen's other previews. */
+    public EntityRenderState withState(net.minecraft.world.level.block.state.BlockState blockState) {
+        this.block.blockState = blockState;
+        return this.state;
+    }
 }

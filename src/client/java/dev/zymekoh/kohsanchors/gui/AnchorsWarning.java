@@ -13,12 +13,14 @@ import org.joml.Quaternionf;
 import org.joml.Vector3f;
 
 /**
- * The warning shown before an advanced, not secure option is switched on, and the ritual that
- * plays once the player accepts it.
+ * The two warnings shown before an advanced, not secure option is switched on, and the ritual that
+ * plays once the player accepts both.
  *
- * <p>The warning cannot be skipped by accident: the confirm button fills up for
- * {@link #READ_NANOS} before it answers, the title says in large letters that the player is
- * warned, and the text says to check whether the server allows it. The motion is strong but
+ * <p>Neither can be skipped by accident. The first fills its confirm button for
+ * {@link #READ_NANOS} before it answers, says in large letters that the player is warned and asks
+ * them to check whether their server allows it. The second says plainly that it is bannable and
+ * that the option only acts in singleplayer, on the local network and on servers allowed one by
+ * one, and it only answers to a button held for {@link #HOLD_NANOS}. The motion is strong but
  * restrained: slow crimson pulses, one impact, a rare glitch, nothing that flashes the whole
  * screen.</p>
  *
@@ -29,6 +31,7 @@ import org.joml.Vector3f;
 final class AnchorsWarning {
     private static final long OPEN_NANOS = 260_000_000L;
     private static final long READ_NANOS = 2_200_000_000L;
+    private static final long HOLD_NANOS = 2_000_000_000L;
     private static final long CLOSE_NANOS = 180_000_000L;
     private static final long RITUAL_NANOS = 2_500_000_000L;
     private static final long RITUAL_REDUCED_NANOS = 700_000_000L;
@@ -38,7 +41,7 @@ final class AnchorsWarning {
     private static final float RISE_START = 0.66F;
     private static final float RISE_END = 0.90F;
 
-    private enum Phase { WARNING, RITUAL, CLOSING, DONE }
+    private enum Phase { WARNING, SECOND, RITUAL, CLOSING, DONE }
 
     private final String optionName;
     private final Runnable onConfirm;
@@ -55,6 +58,8 @@ final class AnchorsWarning {
     private float confirmHover;
     private long lastFrame = System.nanoTime();
     private int soundsPlayed;
+    private long holdStartedAt = -1L;
+    private boolean holdOver;
 
     AnchorsWarning(Component optionName, boolean motion, Runnable onConfirm) {
         this.optionName = optionName.getString();
@@ -89,15 +94,30 @@ final class AnchorsWarning {
             skipRitual(now);
             return true;
         }
-        if (this.phase != Phase.WARNING) {
+        if (this.phase != Phase.WARNING && this.phase != Phase.SECOND) {
             return true;
         }
         AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
+        if (this.phase == Phase.SECOND) {
+            if (modal.cancel().contains(mouseX, mouseY)) {
+                cancel(now);
+            } else if (modal.confirm().contains(mouseX, mouseY)) {
+                this.holdStartedAt = now;
+                play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 0.7F));
+            }
+            return true;
+        }
         if (modal.cancel().contains(mouseX, mouseY)) {
             cancel(now);
         } else if (modal.confirm().contains(mouseX, mouseY) && readyToConfirm(now)) {
-            confirm(now);
+            toSecond(now);
         }
+        return true;
+    }
+
+    /** Letting go of the mouse lets go of the held button. */
+    boolean mouseReleased() {
+        this.holdStartedAt = -1L;
         return true;
     }
 
@@ -105,18 +125,26 @@ final class AnchorsWarning {
     boolean keyPressed(int key) {
         long now = System.nanoTime();
         if (key == 256) {
-            if (this.phase == Phase.WARNING) {
+            if (this.phase == Phase.WARNING || this.phase == Phase.SECOND) {
                 cancel(now);
             } else if (this.phase == Phase.RITUAL) {
                 skipRitual(now);
             }
             return true;
         }
+        // Enter only moves past the first warning; the second takes the held button.
         if ((key == 257 || key == 335) && readyToConfirm(now)) {
-            confirm(now);
+            toSecond(now);
             return true;
         }
         return true;
+    }
+
+    private void toSecond(long now) {
+        this.phase = Phase.SECOND;
+        this.phaseStartedAt = now;
+        this.holdStartedAt = -1L;
+        play(SimpleSoundInstance.forUI(SoundEvents.RESPAWN_ANCHOR_DEPLETE.value(), 0.6F, 0.8F));
     }
 
     private void cancel(long now) {
@@ -154,6 +182,10 @@ final class AnchorsWarning {
                 float open = this.motion ? AnchorsTheme.easeOutCubic((now - this.openedAt) / (float) OPEN_NANOS) : 1.0F;
                 drawDim(graphics, width, height, open, seconds, true);
                 drawWarning(graphics, font, width, height, mouseX, mouseY, open, now, seconds, response);
+            }
+            case SECOND -> {
+                drawDim(graphics, width, height, 1.0F, seconds, true);
+                drawSecond(graphics, font, width, height, mouseX, mouseY, now, seconds, response);
             }
             case RITUAL -> {
                 long duration = this.motion ? RITUAL_NANOS : RITUAL_REDUCED_NANOS;
@@ -293,6 +325,94 @@ final class AnchorsWarning {
                         (int) Math.ceil((READ_NANOS - elapsed) / 1_000_000_000.0D)).getString();
         AnchorsButton.draw(graphics, confirm.x(), confirm.y(), confirm.width(), confirm.height(), confirmText, true, true,
                 this.confirmHover, 0.0F, 1.0F, ready ? -1.0F : elapsed / (float) READ_NANOS);
+    }
+
+    /**
+     * The second warning: darker, the word "bannable" in large letters, where the option acts, and a
+     * button that has to be held.
+     */
+    private void drawSecond(GuiGraphicsExtractor graphics, Font font, int width, int height, int mouseX, int mouseY,
+            long now, double seconds, float response) {
+        AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
+        AnchorsLayout.Rect box = modal.box();
+        float open = this.motion ? AnchorsTheme.easeOutCubic((now - this.phaseStartedAt) / (float) OPEN_NANOS) : 1.0F;
+        // The first warning's box cracks open into the second: a fractured ring and a hard shake.
+        int shake = this.motion && open < 1.0F ? Math.round((float) Math.sin(now / 6_000_000.0D) * 4.0F * (1.0F - open)) : 0;
+        if (this.motion && open < 1.0F) {
+            int radius = Math.round(Math.max(box.width(), box.height()) * (0.45F + open * 0.5F));
+            for (int crack = 0; crack < 12; crack++) {
+                double angle = crack * Math.PI / 6.0D + open;
+                int x0 = box.centerX() + (int) Math.round(Math.cos(angle) * radius * 0.6D);
+                int y0 = box.centerY() + (int) Math.round(Math.sin(angle) * radius * 0.5D);
+                int x1 = box.centerX() + (int) Math.round(Math.cos(angle) * radius);
+                int y1 = box.centerY() + (int) Math.round(Math.sin(angle) * radius * 0.8D);
+                AnchorsUi.segment(graphics, x0, y0, x1, y1, 1, AnchorsTheme.withAlpha(0xFF315C, Math.round(200 * (1.0F - open))));
+            }
+        }
+        int boxX = box.x() + shake;
+        AnchorsUi.halo(graphics, boxX, box.y(), box.width(), box.height(), AnchorsTheme.CRIMSON_BRIGHT, 8, open);
+        AnchorsUi.panel(graphics, boxX, box.y(), box.width(), box.height(), AnchorsTheme.fade(0xE8200410, open),
+                AnchorsTheme.fade(0xE80C0206, open));
+        float pulse = this.motion ? 0.6F + 0.4F * AnchorsTheme.pulse(seconds, 1.1D) : 1.0F;
+        AnchorsUi.roundedOutline(graphics, boxX, box.y(), box.width(), box.height(),
+                AnchorsTheme.withAlpha(0xFF315C, Math.round(255 * pulse * open)));
+        AnchorsUi.bladeCorners(graphics, boxX, box.y(), box.width(), box.height(), 9, AnchorsTheme.fade(0xFFFFD6DE, open));
+        if (open < 0.98F) {
+            return;
+        }
+        if (this.motion) {
+            AnchorsUi.comets(graphics, box.x(), box.y(), box.width(), box.height(), seconds * 1.6D, 0xFF315C);
+        }
+        int padding = modal.padding();
+        int innerWidth = box.width() - padding * 2;
+        int y = box.y() + padding;
+        int bottomLimit = modal.cancel().y() - 6;
+
+        String step = Component.translatable("kohs_anchors.warning.second.step").getString();
+        AnchorsUi.label(graphics, font, step, box.centerX() - font.width(step) / 2, y, 0xFFFF9AB0, false);
+        y += 11;
+        String title = Component.translatable("kohs_anchors.warning.second.title").getString();
+        float titleScale = Math.max(1.0F, Math.min(3.2F, innerWidth / (float) Math.max(1, font.width(title))));
+        titleScale = Math.min(titleScale, Math.max(1.0F, (bottomLimit - y - 30) / 9.0F));
+        if (this.motion && (seconds % 1.7D) < 0.08D) {
+            AnchorsUi.bigText(graphics, font, title, box.centerX() - 3, y, titleScale, 0xA052F2FF, false);
+            AnchorsUi.bigText(graphics, font, title, box.centerX() + 3, y, titleScale, 0xA0E83EAF, false);
+        }
+        AnchorsUi.bigText(graphics, font, title, box.centerX() + 1, y + 1, titleScale, 0xFF5A0514, false);
+        AnchorsUi.bigText(graphics, font, title, box.centerX(), y, titleScale,
+                AnchorsTheme.lerp(0xFFFF6A86, 0xFFFFF7FF, pulse), false);
+        y += Math.round(9 * titleScale) + 6;
+        AnchorsUi.energyLine(graphics, box.x() + padding, box.right() - padding, y - 3, AnchorsTheme.CRIMSON_BRIGHT, seconds * 2,
+                1.0F);
+        for (FormattedCharSequence line : font.split(Component.translatable("kohs_anchors.warning.second.body",
+                this.optionName), Math.max(40, innerWidth))) {
+            if (y + 9 > bottomLimit) {
+                break;
+            }
+            AnchorsUi.line(graphics, font, line, box.centerX() - font.width(line) / 2, y, 0xFFFFE4EA);
+            y += 10;
+        }
+
+        AnchorsLayout.Rect cancel = modal.cancel();
+        AnchorsLayout.Rect confirm = modal.confirm();
+        boolean overCancel = cancel.contains(mouseX, mouseY);
+        this.holdOver = confirm.contains(mouseX, mouseY);
+        this.cancelHover += ((overCancel ? 1.0F : 0.0F) - this.cancelHover) * response;
+        this.confirmHover += ((this.holdOver ? 1.0F : 0.0F) - this.confirmHover) * response;
+        if (this.holdStartedAt >= 0L && !this.holdOver) {
+            this.holdStartedAt = -1L;
+        }
+        float hold = this.holdStartedAt < 0L ? 0.0F : Math.min(1.0F, (now - this.holdStartedAt) / (float) HOLD_NANOS);
+        AnchorsButton.draw(graphics, cancel.x(), cancel.y(), cancel.width(), cancel.height(),
+                Component.translatable("kohs_anchors.warning.cancel").getString(), true, false, this.cancelHover, 0.0F,
+                1.0F, -1.0F);
+        String text = Component.translatable(hold > 0.0F ? "kohs_anchors.warning.second.holding"
+                : "kohs_anchors.warning.second.hold").getString();
+        AnchorsButton.draw(graphics, confirm.x(), confirm.y(), confirm.width(), confirm.height(), text, false, true,
+                this.confirmHover, 0.0F, 1.0F, hold > 0.0F ? hold : -1.0F);
+        if (hold >= 1.0F) {
+            confirm(now);
+        }
     }
 
     // ------------------------------------------------------------------------------------------

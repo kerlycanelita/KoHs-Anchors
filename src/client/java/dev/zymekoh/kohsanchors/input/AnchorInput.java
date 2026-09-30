@@ -3,10 +3,16 @@ package dev.zymekoh.kohsanchors.input;
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.zymekoh.kohsanchors.compat.Mc;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
+import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
+import dev.zymekoh.kohsanchors.glow.AnchorTracker;
+import dev.zymekoh.kohsanchors.integration.CrystalPalette;
+import dev.zymekoh.kohsanchors.integration.HerziumBridge;
 import dev.zymekoh.kohsanchors.mixin.KeyMappingAccessor;
 import dev.zymekoh.kohsanchors.mixin.MinecraftUseInvoker;
 import dev.zymekoh.kohsanchors.predict.AnchorVeil;
 import dev.zymekoh.kohsanchors.predict.DetonationPredictor;
+import dev.zymekoh.kohsanchors.safety.ServerLock;
+import dev.zymekoh.kohsanchors.skin.AtlasSkin;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
@@ -51,6 +57,16 @@ import net.minecraft.world.phys.HitResult;
  *   <li><b>No stacking.</b> In anchor play, a second use with the same item in the same tick is a
  *   double click: it could only fail, or, on grass, snow or the fire an explosion leaves, stack a
  *   second anchor on the first. It joins the first one. Glowstone on an anchor is left alone.</li>
+ *   <li><b>One slot change per tick, first.</b> The server, and anticheats such as Grim, read a
+ *   tick's packets between two tick-end packets, and Vanilla never sends a slot change after a
+ *   click of the same tick: it applies every number key before the first use. A burst is therefore
+ *   applied one stretch per tick, number keys then the uses that follow them; at the first number
+ *   key that would change the slot after a click, the rest of the burst waits for the next tick,
+ *   in pressed order and still in Vanilla's counters. "Anchor, use, glowstone, use, sword, use"
+ *   pressed within one tick lands on three consecutive ticks, which is how Vanilla sends it when
+ *   the presses are a tick apart. Grim's experimental {@code PacketOrderE} (a slot change during
+ *   another action) and {@code MultiPlace} (several placements in one tick) then have nothing to
+ *   see.</li>
  * </ul>
  *
  * <h2>What it never does</h2>
@@ -58,10 +74,10 @@ import net.minecraft.world.phys.HitResult;
  * <p>Every action is one press that Minecraft already counted: a press is consumed from
  * Vanilla's own counter before it is applied, and anything this class does not apply stays in
  * that counter for Vanilla. No press is created or repeated, and none is moved out of the tick
- * loop into an input callback. The only press that runs in a later tick is an early click held
- * as above: at most six of them, for at most 0.7 s, each applied at most once with the slot that
- * was selected when it was pressed; a repeat of the waiting click and a click whose anchor stayed
- * are not applied, as Vanilla would have spent them on that anchor. No slot is chosen that the
+ * loop into an input callback. Presses run in a later tick only to keep the tick shape above, or
+ * as early clicks held as above: at most six of them, for at most 0.7 s, each applied at most once
+ * with the slot that was selected when it was pressed; a repeat of the waiting click and a click
+ * whose anchor stayed are not applied, as Vanilla would have spent them on that anchor. No slot is chosen that the
  * player did not press, the repeat delay for a held key is untouched, and no packet is written
  * here: Vanilla's {@code startUseItem} sends exactly what it would send for the same press.</p>
  */
@@ -84,6 +100,22 @@ public final class AnchorInput {
     private static BlockPos heldFor;
     /** Why the held clicks wait: an exploding anchor, or a drawn anchor the world does not have yet. */
     private static boolean heldForCatchUp;
+    /** The held clicks' block is already free; they only wait for a tick of their own. */
+    private static boolean heldCleared;
+
+    /**
+     * The hotbar slot the first click or attack of this client tick was sent with, or -1 before
+     * any. The tick ends with its tick-end packet; until then no other slot may be sent.
+     */
+    private static int tickSlot = -1;
+    /** Presses of this pass that wait for the next tick: Vanilla's loops leave them queued. */
+    private static boolean deferring;
+    /**
+     * When a burst goes on next tick: the slot its next stretch selects first, -1 for the slot
+     * held now, {@link #NO_BURST} when no burst waits. Told to Herzium at the end of the tick.
+     */
+    private static final int NO_BURST = -2;
+    private static int burstNextSlot = NO_BURST;
 
     /** What happens to one use press. */
     private enum Decision { RUN, RUN_PREDICTED, HOLD, DROP }
@@ -124,12 +156,19 @@ public final class AnchorInput {
     public static void afterKeyClicked(InputConstants.Key key) {
         Minecraft minecraft = Minecraft.getInstance();
         AnchorsConfig.Settings settings = AnchorsConfig.settings();
+        boolean instant = ServerLock.instantDetonation();
         if (minecraft.player == null || minecraft.level == null
-                || !(settings.predictDetonation || settings.hideDetonating || settings.instantDetonation)) {
+                || !(settings.predictDetonation || settings.hideDetonating || instant)) {
             return;
         }
         Options options = minecraft.options;
         if (!key.equals(keyOf(options.keyUse)) || !AnchorContext.ready(minecraft)) {
+            return;
+        }
+        // Another use already waits for this tick: the tick decides the burst, including whether
+        // this press is a double click that joins the first. Showing it now could show a
+        // detonation that never happens.
+        if (((KeyMappingAccessor) options.keyUse).kohsAnchors$clickCount() > 1) {
             return;
         }
         // A number key waiting for the tick decides which item this click uses; the tick judges.
@@ -151,7 +190,8 @@ public final class AnchorInput {
             // Already exploding: this press is an early click for the next anchor.
             return;
         }
-        if (settings.instantDetonation && pending(options.keyUse) && options.keyUse.consumeClick()) {
+        if (instant && (tickSlot < 0 || minecraft.player.getInventory().getSelectedSlot() == tickSlot)
+                && pending(options.keyUse) && options.keyUse.consumeClick()) {
             JOURNAL.forgetLastUse();
             DetonationPredictor.detonate(minecraft.level, target);
             DetonationPredictor.runPredicted(() -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem());
@@ -167,6 +207,98 @@ public final class AnchorInput {
     public static void tick(Minecraft minecraft) {
         AnchorVeil.tick(minecraft);
         DetonationPredictor.tick(minecraft);
+        AnchorDebounce.tick(minecraft);
+        ServerLock.tick(minecraft);
+        AtlasSkin.tick(minecraft);
+        AnchorTracker.tick(minecraft);
+        if (minecraft.level != null) {
+            long gameTime = minecraft.level.getGameTime();
+            AnchorGlowRenderer.tick(gameTime);
+            if (gameTime % 100L == 0L) {
+                // Crystal Tweaks' colours changed while playing: follow them, one file time check.
+                CrystalPalette.syncIfChanged();
+            }
+        }
+    }
+
+    /**
+     * End of the client tick, after its tick-end packet: the next tick may change slot again. A
+     * burst that goes on next tick is told to Herzium, whose hotbar preview is final by now.
+     */
+    public static void endTick(Minecraft minecraft) {
+        tickSlot = -1;
+        if (burstNextSlot != NO_BURST) {
+            if (minecraft.player != null) {
+                Inventory inventory = minecraft.player.getInventory();
+                HerziumBridge.burstContinues(inventory, inventory.getSelectedSlot(), burstNextSlot);
+            }
+            burstNextSlot = NO_BURST;
+        }
+    }
+
+    /**
+     * A click or attack is about to be sent ({@code useItemOn}, {@code useItem}, {@code attack}):
+     * the slot it goes out with is this tick's slot.
+     */
+    public static void onInteraction(Minecraft minecraft) {
+        if (tickSlot < 0 && minecraft.player != null) {
+            tickSlot = minecraft.player.getInventory().getSelectedSlot();
+        }
+    }
+
+    /**
+     * Before Vanilla tells the server the selected slot. After a click of the same tick, a new
+     * slot there is what Grim's {@code PacketOrderE} flags; nothing in this mod should cause it,
+     * so it is only counted, and logged in developer mode.
+     */
+    public static void beforeCarriedItemSync(Minecraft minecraft, int carried) {
+        if (tickSlot < 0 || minecraft.player == null) {
+            return;
+        }
+        int selected = minecraft.player.getInventory().getSelectedSlot();
+        // The sync inside this tick's first click sends that click's own slot: that one is fine.
+        if (selected != carried && selected != tickSlot) {
+            AnchorStats.orderRisk();
+            if (AnchorsConfig.settings().devMode) {
+                dev.zymekoh.kohsanchors.KoHsAnchorsClient.LOGGER.info(
+                        "Slot {} sent after a click with slot {} in the same tick", selected, tickSlot);
+            }
+        }
+    }
+
+    /**
+     * Whether Vanilla's loops in {@code handleKeybinds} may take a press of {@code mapping} now.
+     * Presses left for the next tick stay queued; after a click of this tick, a number key that
+     * would change the slot, and a use, attack or pick with another slot selected, wait too.
+     */
+    public static boolean mayConsume(Minecraft minecraft, KeyMapping mapping) {
+        if (!deferring && tickSlot < 0) {
+            return true;
+        }
+        Options options = minecraft.options;
+        boolean use = mapping == options.keyUse;
+        int slot = -1;
+        KeyMapping[] slots = options.keyHotbarSlots;
+        for (int index = 0; index < slots.length; index++) {
+            if (slots[index] == mapping) {
+                slot = index;
+                break;
+            }
+        }
+        if (deferring && (use || slot >= 0)) {
+            return false;
+        }
+        if (tickSlot < 0 || minecraft.player == null) {
+            return true;
+        }
+        int selected = minecraft.player.getInventory().getSelectedSlot();
+        if (slot >= 0) {
+            return slot == selected;
+        }
+        if (use || mapping == options.keyAttack || mapping == options.keyPickItem) {
+            return selected == tickSlot;
+        }
+        return true;
     }
 
     /** Start of {@code handleKeybinds}: held clicks whose anchor is gone run first, in order. */
@@ -174,6 +306,7 @@ public final class AnchorInput {
         hotbarPointReached = false;
         usesThisPass = 0;
         lastUseSlot = -1;
+        deferring = false;
         if (heldCount > 0) {
             releaseHeld(minecraft);
         }
@@ -208,7 +341,7 @@ public final class AnchorInput {
                 || pending(options.keyAttack) || pending(options.keyPickItem)) {
             return;
         }
-        if (!needsPressedOrder(BURST, count)) {
+        if (!needsPressedOrder(BURST, count) && tickSlot < 0) {
             return;
         }
         if (!isAnchorBurst(minecraft, BURST, count)) {
@@ -238,11 +371,20 @@ public final class AnchorInput {
      * or dropped because it could only fail or misplace a block.
      */
     private static Decision decide(Minecraft minecraft) {
+        if (usesThisPass == 0) {
+            DetonationPredictor.firstUseOfTick(minecraft.level, targetBlock(minecraft));
+        }
         if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft)) {
             AnchorStats.mergedClick();
             return Decision.DROP;
         }
-        if (AnchorsConfig.settings().fastChain) {
+        if (DetonationPredictor.awaitsUse(targetBlock(minecraft))) {
+            // The detonation this very press showed when it was pressed. Its anchor counts as
+            // exploding already, but that explosion is what this use is about to cause: it runs
+            // now, as Vanilla would run it, instead of waiting for a removal only it can bring.
+            return Decision.RUN;
+        }
+        if (ServerLock.fastChain()) {
             return switch (FastChain.decide(minecraft)) {
                 case RUN -> Decision.RUN;
                 case RUN_PREDICTED -> Decision.RUN_PREDICTED;
@@ -260,14 +402,21 @@ public final class AnchorInput {
     private static void replay(Minecraft minecraft, int[] burst, int count) {
         Options options = minecraft.options;
         KeyMapping[] slots = options.keyHotbarSlots;
-        for (int index = 0; index < count; index++) {
+        int index = 0;
+        for (; index < count; index++) {
             // A use that opened a screen, started eating or started breaking ends the burst; the
             // presses still counted are Vanilla's to handle, as they would have been.
             if (!AnchorContext.ready(minecraft) || minecraft.player == null) {
+                index = count;
                 break;
             }
             int action = burst[index];
+            int selected = minecraft.player.getInventory().getSelectedSlot();
             if (action == InputJournal.USE) {
+                if (tickSlot >= 0 && selected != tickSlot) {
+                    // This tick already clicked with another item: this click is the next tick's.
+                    break;
+                }
                 if (!options.keyUse.consumeClick()) {
                     continue;
                 }
@@ -277,9 +426,26 @@ public final class AnchorInput {
                     default -> {
                     }
                 }
-            } else if (slots[action].consumeClick()) {
-                // Exactly what Vanilla does for a number key outside spectator and creative saving.
-                minecraft.player.getInventory().setSelectedSlot(action);
+            } else {
+                if (tickSlot >= 0 && action != selected) {
+                    // A slot change after this tick's click: it and what follows wait a tick.
+                    break;
+                }
+                if (slots[action].consumeClick()) {
+                    // Exactly what Vanilla does for a number key outside spectator and creative saving.
+                    minecraft.player.getInventory().setSelectedSlot(action);
+                    HerziumBridge.pressConsumed(action, ((KeyMappingAccessor) slots[action]).kohsAnchors$clickCount());
+                }
+            }
+        }
+        if (index < count) {
+            JOURNAL.carry(burst, index, count - index, System.nanoTime());
+            deferring = true;
+            AnchorStats.nextTickPresses(count - index);
+            // The next stretch selects the last number key before its first use, if any.
+            burstNextSlot = -1;
+            for (int next = index; next < count && burst[next] != InputJournal.USE; next++) {
+                burstNextSlot = burst[next];
             }
         }
         AnchorStats.orderedBurst();
@@ -328,6 +494,7 @@ public final class AnchorInput {
             heldSince = System.nanoTime();
             heldFor = target.immutable();
             heldForCatchUp = catchUp;
+            heldCleared = false;
         }
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
@@ -345,15 +512,26 @@ public final class AnchorInput {
      * spent them on that same anchor.</p>
      */
     private static void releaseHeld(Minecraft minecraft) {
-        boolean cleared = heldForCatchUp ? FastChain.caughtUp(minecraft.level, heldFor)
-                : !DetonationPredictor.isDetonating(heldFor);
-        if (!cleared && System.nanoTime() - heldSince < HOLD_TIMEOUT_NANOS) {
+        // The server acknowledged the detonation and kept the anchor: the clicks meant for the
+        // free block would land on it, so they are dropped now instead of at the timeout.
+        // Kept: the server acknowledged the detonation and the anchor is still there; or the
+        // detonation was taken back (shown at a press whose click went elsewhere) or ran out while
+        // the anchor still stands. The clicks meant for the free block would land on it: dropped.
+        boolean kept = !heldCleared && !heldForCatchUp && (DetonationPredictor.failed(heldFor)
+                || !DetonationPredictor.isDetonating(heldFor) && minecraft.level != null
+                && minecraft.level.getBlockState(heldFor).is(net.minecraft.world.level.block.Blocks.RESPAWN_ANCHOR));
+        boolean cleared = heldCleared || !kept && (heldForCatchUp ? FastChain.caughtUp(minecraft.level, heldFor)
+                : !DetonationPredictor.isDetonating(heldFor));
+        if (!cleared && !kept && System.nanoTime() - heldSince < HOLD_TIMEOUT_NANOS) {
             return;
         }
         int count = heldCount;
         heldCount = 0;
         if (!cleared) {
             AnchorStats.droppedClicks(count);
+            if (kept) {
+                DetonationPredictor.forget(heldFor);
+            }
             return;
         }
         if (!AnchorContext.ready(minecraft) || minecraft.player == null) {
@@ -362,14 +540,19 @@ public final class AnchorInput {
         }
         Inventory inventory = minecraft.player.getInventory();
         int selected = inventory.getSelectedSlot();
-        for (int index = 0; index < count && AnchorContext.ready(minecraft); index++) {
+        int index = 0;
+        for (; index < count && AnchorContext.ready(minecraft); index++) {
+            if (tickSlot >= 0 && HELD_SLOTS[index] != tickSlot) {
+                // One slot per tick: the clicks held with another item run on the next tick.
+                break;
+            }
             if (inventory.getSelectedSlot() != HELD_SLOTS[index]) {
                 inventory.setSelectedSlot(HELD_SLOTS[index]);
             }
             Mc.pick(minecraft);
             usesThisPass++;
             lastUseSlot = HELD_SLOTS[index];
-            if (!AnchorsConfig.settings().fastChain) {
+            if (!ServerLock.fastChain()) {
                 ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
                 continue;
             }
@@ -380,6 +563,16 @@ public final class AnchorInput {
                 default -> AnchorStats.droppedClicks(1);
             }
         }
+        if (index < count && AnchorContext.ready(minecraft)) {
+            // Their block is free already: they wait only for a tick that has not clicked yet.
+            System.arraycopy(HELD_SLOTS, index, HELD_SLOTS, 0, count - index);
+            heldCount = count - index;
+            heldSince = System.nanoTime();
+            heldCleared = true;
+            AnchorStats.nextTickPresses(count - index);
+        }
+        // Selected again at once, sent to the server only by the next click or tick: this tick's
+        // other clicks, pressed with the slot held now, wait for the next tick (mayConsume).
         if (inventory.getSelectedSlot() != selected) {
             inventory.setSelectedSlot(selected);
         }
@@ -480,6 +673,12 @@ public final class AnchorInput {
             }
         }
         return false;
+    }
+
+    /** The block under the crosshair, or {@code null}. */
+    private static BlockPos targetBlock(Minecraft minecraft) {
+        return minecraft.hitResult instanceof BlockHitResult hit && hit.getType() == HitResult.Type.BLOCK
+                ? hit.getBlockPos() : null;
     }
 
     private static boolean pending(KeyMapping mapping) {

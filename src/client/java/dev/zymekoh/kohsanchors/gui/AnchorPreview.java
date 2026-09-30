@@ -1,6 +1,9 @@
 package dev.zymekoh.kohsanchors.gui;
 
 import dev.zymekoh.kohsanchors.compat.AnchorBlockPreview;
+import dev.zymekoh.kohsanchors.config.AnchorsConfig;
+import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
+import dev.zymekoh.kohsanchors.sound.AnchorSounds;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
@@ -42,6 +45,8 @@ final class AnchorPreview {
     private float targetZoom = 1.0F;
     private int charge;
     private float shownCharge;
+    /** A light colour that replaces the anchor's own, RGB; 0 for none. */
+    private int lightOverride;
     private long blastStartedAt = -1L;
     private long respawnedAt = -1L;
     /** Starts at the opening, so the anchor holds its three-quarter pose before it plays. */
@@ -51,6 +56,11 @@ final class AnchorPreview {
 
     private boolean dragging;
     private double dragDistance;
+
+    /** Lights the preview in {@code argb} instead of the anchor's own glow; 0 goes back to it. */
+    void lightOverride(int argb) {
+        this.lightOverride = argb & 0xFFFFFF;
+    }
 
     /** The charge the anchor shows right now, easing between whole charges. */
     float charge() {
@@ -74,11 +84,17 @@ final class AnchorPreview {
         float blast = blastProgress(now);
         float appear = appearProgress(now);
         float glow = this.shownCharge / 4.0F;
+        // The light is the one the anchors in the world give off: the skin's glow or the custom
+        // colour. With the glow off, the portal's own violet, softer.
+        boolean glowing = AnchorsConfig.settings().glow.enabled;
+        int light = this.lightOverride != 0 ? this.lightOverride
+                : glowing ? AnchorGlowRenderer.ownColor(Math.max(1, Math.round(this.shownCharge))) & 0xFFFFFF
+                : AnchorsTheme.PORTAL;
 
         // Light behind the block that grows with every charge, and the shadow it stands on.
         float breathe = motion ? 0.85F + 0.15F * (float) Math.sin(seconds * 3.2D) : 1.0F;
         AnchorsUi.glowEllipse(graphics, centerX, centerY, Math.round(size * 0.47F), Math.round(size * 0.43F),
-                AnchorsTheme.PORTAL, (0.45F + glow * 0.55F) * breathe * intro);
+                light, (0.45F + glow * 0.55F) * breathe * intro * (glowing ? 1.0F : 0.7F));
         AnchorsUi.ellipse(graphics, centerX, centerY + Math.round(size * 0.34F), Math.round(size * 0.30F),
                 Math.max(2, Math.round(size * 0.06F)), AnchorsTheme.withAlpha(0x0A0412, Math.round(150 * intro)));
 
@@ -97,10 +113,10 @@ final class AnchorPreview {
             }
             if (motion && this.charge > 0) {
                 portalMotes(graphics, centerX, centerY - Math.round(size * 0.18F * this.zoom), size, seconds,
-                        this.charge, intro);
+                        this.charge, intro, light);
             }
         } else {
-            drawBlast(graphics, centerX, centerY, size, blast, intro);
+            drawBlast(graphics, centerX, centerY, size, blast, intro, light);
         }
 
         boolean hovered = area.contains(mouseX, mouseY);
@@ -193,16 +209,16 @@ final class AnchorPreview {
         if (this.blastStartedAt >= 0L) {
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
         if (this.charge < 4) {
             this.charge++;
             if (withSound) {
-                minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.RESPAWN_ANCHOR_CHARGE, 1.0F, 0.55F));
+                // The player's own charge and explosion sounds, when they chose them.
+                AnchorSounds.previewCharge(0.9F + this.charge * 0.05F);
             }
         } else {
             this.blastStartedAt = now;
             if (withSound) {
-                minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.GENERIC_EXPLODE, 1.0F));
+                AnchorSounds.previewExplosion();
             }
         }
     }
@@ -216,7 +232,7 @@ final class AnchorPreview {
     }
 
     private static void drawBlast(GuiGraphicsExtractor graphics, int centerX, int centerY, int size, float blast,
-            float intro) {
+            float intro, int light) {
         float fadeOut = 1.0F - blast;
         if (blast < 0.3F) {
             int flash = Math.round(200.0F * (1.0F - blast / 0.3F) * intro);
@@ -234,14 +250,14 @@ final class AnchorPreview {
             int y = centerY + (int) Math.round(Math.sin(angle) * distance * 0.9D);
             int sparkSize = index % 4 == 0 ? 3 : 2;
             graphics.fill(x, y, x + sparkSize, y + sparkSize,
-                    AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.ACCENT_BRIGHT, AnchorsTheme.PORTAL, blast),
+                    AnchorsTheme.fade(AnchorsTheme.lerp(AnchorsTheme.ACCENT_BRIGHT, 0xFF000000 | light, blast),
                             fadeOut * intro));
         }
     }
 
     /** Violet motes rising out of a charged anchor, more with every charge. */
     private static void portalMotes(GuiGraphicsExtractor graphics, int centerX, int topY, int size, double seconds,
-            int charge, float intro) {
+            int charge, float intro, int light) {
         int count = 3 + charge * 3;
         int spread = Math.max(4, Math.round(size * 0.22F));
         int rise = Math.max(8, Math.round(size * 0.36F));
@@ -251,7 +267,7 @@ final class AnchorPreview {
             int x = centerX + (int) Math.round(Math.sin(phase * 9.0D + seconds * 0.8D) * spread * (0.4D + life * 0.6D));
             int y = topY - (int) Math.round(life * rise);
             int alpha = Math.round((float) Math.sin(life * Math.PI) * 190.0F * intro);
-            int color = index % 3 == 0 ? 0xF0D9FF : 0xB46CFF;
+            int color = index % 3 == 0 ? AnchorsTheme.lerp(light, 0xFFFFFF, 0.7F) & 0xFFFFFF : light;
             graphics.fill(x, y, x + (index % 5 == 0 ? 2 : 1), y + (index % 5 == 0 ? 2 : 1),
                     AnchorsTheme.withAlpha(color, alpha));
         }

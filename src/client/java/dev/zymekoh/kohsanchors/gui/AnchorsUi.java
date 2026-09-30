@@ -14,6 +14,24 @@ final class AnchorsUi {
     private AnchorsUi() {
     }
 
+    /**
+     * Starts a new GUI stratum. Minecraft places every GUI element by testing its bounds against
+     * the elements already in the stratum, so a shape drawn from hundreds of spans (a ring, a soft
+     * glow, a gradient square) made each later element test all of them: quadratic work that cost
+     * the settings screen half its frame rate. Shapes like that get a stratum of their own, opened
+     * before and after them. What shows is unchanged: a later stratum is drawn over an earlier
+     * one, just as a later element is drawn over what it overlaps.
+     */
+    static void isolate(GuiGraphicsExtractor graphics) {
+        graphics.nextStratum();
+    }
+
+    /**
+     * Rows of a round shape per stratum: the rows of one shape never overlap, so each would still
+     * test all the rows before it; a fresh stratum every few rows keeps a large ring linear.
+     */
+    private static final int ROWS_PER_STRATUM = 24;
+
     /** A panel with 3px rounded corners and a vertical gradient. */
     static void panel(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int top, int bottom) {
         if (width < 6 || height < 6) {
@@ -95,6 +113,15 @@ final class AnchorsUi {
     /** {@code text} cut to {@code room} pixels. */
     static String fit(Font font, String text, int room) {
         return font.width(text) > room ? font.plainSubstrByWidth(text, Math.max(0, room)) : text;
+    }
+
+    /** {@code text} cut to {@code room} pixels with an ellipsis where it was cut. */
+    static String ellipsis(Font font, String text, int room) {
+        if (font.width(text) <= room) {
+            return text;
+        }
+        String dots = "…";
+        return font.plainSubstrByWidth(text, Math.max(0, room - font.width(dots))).stripTrailing() + dots;
     }
 
     static List<FormattedCharSequence> wrap(Font font, Component text, int width) {
@@ -209,10 +236,17 @@ final class AnchorsUi {
         if (radiusX <= 0 || radiusY <= 0 || ((color >>> 24) & 255) < 2) {
             return;
         }
+        boolean many = radiusY > 6;
         for (int row = -radiusY; row <= radiusY; row++) {
+            if (many && (row + radiusY) % ROWS_PER_STRATUM == 0) {
+                isolate(graphics);
+            }
             double t = row / (double) radiusY;
             int span = (int) Math.round(radiusX * Math.sqrt(Math.max(0.0D, 1.0D - t * t)));
             graphics.fill(centerX - span, centerY + row, centerX + span + 1, centerY + row + 1, color);
+        }
+        if (many) {
+            isolate(graphics);
         }
     }
 
@@ -383,6 +417,47 @@ final class AnchorsUi {
         }
     }
 
+    /**
+     * A colour swatch: a checker behind it for translucent colours, the colour, and a frame that
+     * lights up with {@code highlight} (0 to 1).
+     */
+    static void swatch(GuiGraphicsExtractor graphics, int x, int y, int width, int height, int color, float alpha,
+            float highlight) {
+        if (width <= 0 || height <= 0 || alpha <= 0.01F) {
+            return;
+        }
+        int colorAlpha = Math.round(((color >>> 24) & 255) * alpha);
+        if (colorAlpha < 250) {
+            // The checkerboard only shows through a colour that is not opaque.
+            int cell = 3;
+            for (int cy = 0; cy < height; cy += cell) {
+                for (int cx = 0; cx < width; cx += cell) {
+                    boolean light = ((cx / cell) + (cy / cell)) % 2 == 0;
+                    graphics.fill(x + cx, y + cy, x + Math.min(width, cx + cell), y + Math.min(height, cy + cell),
+                            fade(light ? 0xFF3A3346 : 0xFF221C2C, alpha));
+                }
+            }
+        }
+        graphics.fill(x, y, x + width, y + height, withAlphaFast(color, colorAlpha));
+        outline(graphics, x - 1, y - 1, width + 2, height + 2, fade(AnchorsTheme.lerp(0xFF4C2380, 0xFFFFF7FF, highlight), alpha));
+    }
+
+    private static int withAlphaFast(int color, int alpha) {
+        return Math.max(0, Math.min(255, alpha)) << 24 | (color & 0xFFFFFF);
+    }
+
+    /** A thin line between two points, drawn as a run of small squares. */
+    static void segment(GuiGraphicsExtractor graphics, float x0, float y0, float x1, float y1, int thickness, int color) {
+        float dx = x1 - x0;
+        float dy = y1 - y0;
+        int steps = Math.max(1, Math.round(Math.max(Math.abs(dx), Math.abs(dy))));
+        for (int step = 0; step <= steps; step++) {
+            int x = Math.round(x0 + dx * step / steps);
+            int y = Math.round(y0 + dy * step / steps);
+            graphics.fill(x, y, x + thickness, y + thickness, color);
+        }
+    }
+
     private static int fade(int color, float factor) {
         return AnchorsTheme.fade(color, factor);
     }
@@ -393,7 +468,11 @@ final class AnchorsUi {
             return;
         }
         int inner = Math.max(0, radius - thickness);
+        boolean many = radius > 6;
         for (int dy = -radius; dy <= radius; dy++) {
+            if (many && (dy + radius) % ROWS_PER_STRATUM == 0) {
+                isolate(graphics);
+            }
             int outerSpan = (int) Math.round(Math.sqrt((double) radius * radius - (double) dy * dy));
             int innerSpan = Math.abs(dy) >= inner ? -1
                     : (int) Math.round(Math.sqrt((double) inner * inner - (double) dy * dy));
@@ -403,6 +482,9 @@ final class AnchorsUi {
                 graphics.fill(centerX - outerSpan, centerY + dy, centerX - innerSpan, centerY + dy + 1, color);
                 graphics.fill(centerX + innerSpan + 1, centerY + dy, centerX + outerSpan + 1, centerY + dy + 1, color);
             }
+        }
+        if (many) {
+            isolate(graphics);
         }
     }
 }

@@ -43,6 +43,14 @@ final class AnchorsTheme {
     static final int CRIMSON_GLASS_BOTTOM = 0xD8140510;
     static final int BLOOD_DARK = 0xFF1A0308;
 
+    /** Developer mode: blue-violet, the colour of a debugger, still inside the purple family. */
+    static final int DEV_BLUE = 0xFF5B6CFF;
+    static final int DEV_BLUE_BRIGHT = 0xFF9DB0FF;
+    static final int DEV_INDIGO = 0xFF4F2FD9;
+    static final int DEV_GLASS_TOP = 0xE0141A4A;
+    static final int DEV_GLASS_BOTTOM = 0xE00A0C26;
+    static final int DEV_TEXT = 0xFFDDE4FF;
+
     static final int SWITCH_OFF = 0xFF25123F;
     static final int SWITCH_ON = 0xFF9333EA;
     static final int SWITCH_DANGER_ON = 0xFFD11F4A;

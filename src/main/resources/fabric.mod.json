@@ -3,7 +3,7 @@
   "id": "kohs_anchors",
   "version": "${version}",
   "name": "KoHs Anchor's",
-  "description": "Respawn anchor and glowstone clicks land in the order you pressed them, on the block you are actually looking at, and a detonation shows the moment you use it. Every action still comes from your own click and the server stays in charge.",
+  "description": "Respawn anchor and glowstone clicks land in the order you pressed them, on the block you are actually looking at, and a detonation shows the moment you use it. Paint the anchor's two layers, give charged anchors real-looking light, pick their sounds. Every action still comes from your own click and the server stays in charge.",
   "authors": [
     "zymekoh"
   ],
@@ -30,6 +30,8 @@
     "java": ">=${java_version}"
   },
   "suggests": {
-    "modmenu": ">=${modmenu_version}"
+    "modmenu": ">=${modmenu_version}",
+    "crystal_tweaks": "*",
+    "herzium": "*"
   }
 }

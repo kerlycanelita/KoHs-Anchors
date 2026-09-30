@@ -23,17 +23,23 @@ import net.minecraft.world.phys.Vec3;
  * for a round trip until the server's explosion removes it. With the advanced chain, the anchor
  * that the next click places, and the glowstone that charges it, are drawn at once too.</p>
  *
- * <p>Only the chunk mesh and the crosshair outline read this. The block stays in the client world
- * exactly as the server last said: collision, the crosshair's raycast, movement and every packet
- * are those of Vanilla. The veil lifts when the server's states for that block have arrived in
- * the order the clicks predicted them, or after {@link #TIMEOUT_NANOS} at the latest.</p>
+ * <p>Only the chunk mesh, the crosshair outline and the client's light engine read this: the
+ * light a veiled anchor gave goes out with it and comes back with it. The block stays in the client
+ * world exactly as the server last said: collision, the crosshair's raycast, movement and every
+ * packet are those of Vanilla. The veil lifts when the server's states for that block have arrived in
+ * the order the clicks predicted them, or after a wait that follows the connection's latency.</p>
  *
  * <p>Chunk meshes are built on worker threads, so the lookup is lock-free and costs one volatile
  * read while nothing is veiled.</p>
  */
 public final class AnchorVeil {
-    /** Longer than any round trip worth playing on; then the world is drawn as it is. */
-    private static final long TIMEOUT_NANOS = 1_500_000_000L;
+    /**
+     * How long a veil waits for the server: three round trips and a quarter second, 0.4 to 1.5 s.
+     * An answer that never comes (a click an anticheat dropped without a word) no longer hides the
+     * anchor for a second and a half: past this, the world is drawn as it is.
+     */
+    private static final long MIN_TIMEOUT_NANOS = 400_000_000L;
+    private static final long MAX_TIMEOUT_NANOS = 1_500_000_000L;
     private static final int MAX_VEILS = 8;
 
     private static final Map<Long, Veil> VEILS = new ConcurrentHashMap<>();
@@ -115,6 +121,7 @@ public final class AnchorVeil {
         veil.since = System.nanoTime();
         active = true;
         remesh(level, position);
+        relight(level, position);
     }
 
     /**
@@ -158,12 +165,15 @@ public final class AnchorVeil {
             return;
         }
         long now = System.nanoTime();
+        long timeout = Latency.answerWindowNanos(MIN_TIMEOUT_NANOS, MAX_TIMEOUT_NANOS);
         Iterator<Map.Entry<Long, Veil>> iterator = VEILS.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<Long, Veil> entry = iterator.next();
-            if (now - entry.getValue().since > TIMEOUT_NANOS) {
+            if (now - entry.getValue().since > timeout) {
                 iterator.remove();
-                remesh(level, BlockPos.of(entry.getKey()));
+                BlockPos position = BlockPos.of(entry.getKey());
+                remesh(level, position);
+                relight(level, position);
             }
         }
         active = !VEILS.isEmpty();
@@ -175,6 +185,7 @@ public final class AnchorVeil {
             active = !VEILS.isEmpty();
             if (level != null) {
                 remesh(level, position);
+                relight(level, position);
             }
         }
     }
@@ -205,6 +216,15 @@ public final class AnchorVeil {
         }
         return actual.is(Blocks.RESPAWN_ANCHOR)
                 && actual.getValue(RespawnAnchorBlock.CHARGE).equals(expected.getValue(RespawnAnchorBlock.CHARGE));
+    }
+
+    /**
+     * Has the client's light engine look at {@code position} again, where the light engine reads
+     * the drawn state ({@code BlockLightEngineMixin}): processed with the frame's light updates,
+     * which remesh whatever the light changed.
+     */
+    private static void relight(ClientLevel level, BlockPos position) {
+        level.getChunkSource().getLightEngine().checkBlock(position);
     }
 
     private static void remesh(ClientLevel level, BlockPos position) {
