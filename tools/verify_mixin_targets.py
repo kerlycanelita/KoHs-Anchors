@@ -189,6 +189,115 @@ def check_version(version):
         problems.append("LevelRenderState.blockOutlineRenderState is missing")
     if method_body(minecraft, "tick", "()") is None:
         problems.append("Minecraft.tick() is missing")
+
+    # 0.4.0: the debounce and own-anchor hook, the detonation acknowledgement, the glow, the skin
+    # and the charge sound.
+    game_mode = disassemble(version, "net.minecraft.client.multiplayer.MultiPlayerGameMode")
+    if not re.search(r"public net\.minecraft\.world\.InteractionResult useItemOn\(net\.minecraft\.client\.player\.LocalPlayer, "
+                     r"net\.minecraft\.world\.InteractionHand, net\.minecraft\.world\.phys\.BlockHitResult\);", game_mode):
+        problems.append("MultiPlayerGameMode.useItemOn(LocalPlayer, InteractionHand, BlockHitResult) is missing")
+    use_item = method_body(minecraft, "startUseItem", "()")
+    if use_item is not None and not any("InteractionResult$Fail" in line for line in use_item):
+        problems.append("startUseItem no longer stops at a FAIL from useItemOn")
+    if not re.search(r"public void handleBlockChangedAck\(int\);", level):
+        problems.append("ClientLevel.handleBlockChangedAck(int) is missing")
+    if not re.search(r"private final net\.minecraft\.client\.multiplayer\.prediction\.BlockStatePredictionHandler "
+                     r"blockStatePredictionHandler;", level):
+        problems.append("ClientLevel.blockStatePredictionHandler is missing")
+    handler = disassemble(version, "net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler")
+    if not re.search(r"public int currentSequence\(\);", handler):
+        problems.append("BlockStatePredictionHandler.currentSequence() is missing")
+
+    level_renderer = disassemble(version, "net.minecraft.client.renderer.LevelRenderer")
+    storage = "SubmitNodeStorage" if version in ("1.21.11", "26.1", "26.1.1", "26.1.2") else "SubmitNodeCollector"
+    if not re.search(r"private void submitBlockEntities\(com\.mojang\.blaze3d\.vertex\.PoseStack, "
+                     + re.escape(state_class) + r", net\.minecraft\.client\.renderer\." + storage + r"\);", level_renderer):
+        problems.append(f"LevelRenderer.submitBlockEntities(PoseStack, LevelRenderState, {storage}) is missing")
+    ordered = disassemble(version, "net.minecraft.client.renderer.OrderedSubmitNodeCollector")
+    if "submitCustomGeometry(com.mojang.blaze3d.vertex.PoseStack, net.minecraft.client.renderer.rendertype.RenderType, " \
+            "net.minecraft.client.renderer.SubmitNodeCollector$CustomGeometryRenderer)" not in ordered:
+        problems.append("OrderedSubmitNodeCollector.submitCustomGeometry is missing")
+    camera_state = "net.minecraft.client.renderer.state.CameraRenderState" if not modern \
+        else "net.minecraft.client.renderer.state.level.CameraRenderState"
+    if not re.search(r"public " + re.escape(camera_state) + r" cameraRenderState;", render_state):
+        problems.append("LevelRenderState.cameraRenderState is missing")
+    camera = disassemble(version, camera_state)
+    if not re.search(r"public net\.minecraft\.world\.phys\.Vec3 pos;", camera):
+        problems.append("CameraRenderState.pos is missing")
+    if not re.search(r"public org\.joml\.Quaternionf orientation;", camera):
+        problems.append("CameraRenderState.orientation is missing (the glow's view cone)")
+    pipelines = disassemble(version, "net.minecraft.client.renderer.RenderPipelines")
+    if not re.search(r"public static final [\w.]+RenderPipeline DRAGON_RAYS;", pipelines):
+        problems.append("RenderPipelines.DRAGON_RAYS is missing")
+
+    atlas = disassemble(version, "net.minecraft.client.renderer.texture.TextureAtlas")
+    if not re.search(r"public void upload\(net\.minecraft\.client\.renderer\.texture\.SpriteLoader\$Preparations\);", atlas):
+        problems.append("TextureAtlas.upload(SpriteLoader.Preparations) is missing")
+    contents = disassemble(version, "net.minecraft.client.renderer.texture.SpriteContents")
+    if not re.search(r"public net\.minecraft\.client\.renderer\.texture\.SpriteContents\$AnimationState "
+                     r"createAnimationState\(", contents):
+        problems.append("SpriteContents.createAnimationState is missing")
+    animation = disassemble(version, "net.minecraft.client.renderer.texture.SpriteContents$AnimationState")
+    if not re.search(r"it\.unimi\.dsi\.fastutil\.ints\.Int2ObjectMap<[\w.]+GpuTextureView> frameTexturesByIndex;", animation):
+        problems.append("SpriteContents.AnimationState.frameTexturesByIndex is missing")
+    sprite = disassemble(version, "net.minecraft.client.renderer.texture.TextureAtlasSprite")
+    if not re.search(r"private final int padding;", sprite):
+        problems.append("TextureAtlasSprite.padding is missing")
+
+    sound = method_body(listener, "handleSoundEvent")
+    if sound is None or not calls(sound, r"ClientLevel\.playSeededSound:\(Lnet/minecraft/world/entity/Entity;DDD"
+                                         r"Lnet/minecraft/core/Holder;Lnet/minecraft/sounds/SoundSource;FFJ\)V"):
+        problems.append("handleSoundEvent no longer plays through ClientLevel.playSeededSound(Entity, x, y, z, Holder, ...)")
+
+    # 0.4.0: no light left where the veil hides an anchor, and bounce light dropped on block changes.
+    block_light = disassemble(version, "net.minecraft.world.level.lighting.BlockLightEngine")
+    emission = method_body(block_light, "getEmission", "(long, net.minecraft.world.level.block.state.BlockState)")
+    if emission is None:
+        problems.append("BlockLightEngine.getEmission(long, BlockState) is missing")
+    elif len(calls(emission, r"BlockState\.getLightEmission:\(\)I")) != 1:
+        problems.append("BlockLightEngine.getEmission no longer reads BlockState.getLightEmission() exactly once")
+    light_engine = disassemble(version, "net.minecraft.world.level.lighting.LightEngine")
+    if not re.search(r"protected final net\.minecraft\.world\.level\.chunk\.LightChunkGetter chunkSource;", light_engine):
+        problems.append("LightEngine.chunkSource is missing")
+    level_light = disassemble(version, "net.minecraft.world.level.lighting.LevelLightEngine")
+    if not re.search(r"public void checkBlock\(net\.minecraft\.core\.BlockPos\);", level_light):
+        problems.append("LevelLightEngine.checkBlock(BlockPos) is missing")
+    if not re.search(r"public void sendBlockUpdated\(net\.minecraft\.core\.BlockPos, net\.minecraft\.world\.level\.block\.state\."
+                     r"BlockState, net\.minecraft\.world\.level\.block\.state\.BlockState, int\);", level):
+        problems.append("ClientLevel.sendBlockUpdated(BlockPos, BlockState, BlockState, int) is missing")
+    chunk_cache = disassemble(version, "net.minecraft.client.multiplayer.ClientChunkCache")
+    if "LevelLightEngine.\"<init>\":(Lnet/minecraft/world/level/chunk/LightChunkGetter;ZZ)V" not in chunk_cache:
+        problems.append("ClientChunkCache no longer builds its LevelLightEngine on itself")
+
+    # 0.4.0: one slot change per tick, before its clicks (Grim's PacketOrderE / MultiPlace).
+    keybinds = method_body(minecraft, "handleKeybinds", "()")
+    if keybinds is None or len(calls(keybinds, r"KeyMapping\.consumeClick:\(\)Z")) < 5:
+        problems.append("handleKeybinds no longer takes its presses through KeyMapping.consumeClick()")
+    tick = method_body(minecraft, "tick", "()")
+    if tick is None:
+        problems.append("Minecraft.tick() is missing")
+    else:
+        tick_end = calls(tick, r"ServerboundClientTickEndPacket\.INSTANCE")
+        returns = [index for index, line in enumerate(tick) if re.search(r"\breturn\s*$", line)]
+        keybind_calls = calls(tick, r"Method handleKeybinds:\(\)V")
+        if not tick_end or len(returns) != 1 or tick_end[-1] > returns[0] or not keybind_calls \
+                or keybind_calls[0] > tick_end[0]:
+            problems.append("Minecraft.tick no longer sends the tick-end packet after handleKeybinds and before its end")
+    game_mode_p = disassemble(version, "net.minecraft.client.multiplayer.MultiPlayerGameMode")
+    if not re.search(r"private int carriedIndex;", game_mode_p):
+        problems.append("MultiPlayerGameMode.carriedIndex is missing")
+    if not re.search(r"private void ensureHasSentCarriedItem\(\);", game_mode_p):
+        problems.append("MultiPlayerGameMode.ensureHasSentCarriedItem() is missing")
+    if not re.search(r"public net\.minecraft\.world\.InteractionResult useItem\(net\.minecraft\.world\.entity\.player\.Player, "
+                     r"net\.minecraft\.world\.InteractionHand\);", game_mode_p):
+        problems.append("MultiPlayerGameMode.useItem(Player, InteractionHand) is missing")
+    if not re.search(r"public void attack\(net\.minecraft\.world\.entity\.player\.Player, net\.minecraft\.world\.entity\.Entity\);",
+                     game_mode_p):
+        problems.append("MultiPlayerGameMode.attack(Player, Entity) is missing")
+    for name in ("useItemOn", "useItem", "attack"):
+        body = method_body(game_mode_p, name, "(")
+        if body is None or not calls(body, r"Method ensureHasSentCarriedItem:\(\)V"):
+            problems.append(f"MultiPlayerGameMode.{name} no longer sends the carried slot first")
     return problems
 
 

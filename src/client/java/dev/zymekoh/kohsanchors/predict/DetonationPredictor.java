@@ -1,7 +1,13 @@
 package dev.zymekoh.kohsanchors.predict;
 
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
+import dev.zymekoh.kohsanchors.input.AnchorCycles;
+import dev.zymekoh.kohsanchors.input.AnchorDebounce;
 import dev.zymekoh.kohsanchors.input.AnchorStats;
+import dev.zymekoh.kohsanchors.mixin.KeyMappingAccessor;
+import dev.zymekoh.kohsanchors.mixin.ClientLevelPredictionAccessor;
+import dev.zymekoh.kohsanchors.safety.ServerLock;
+import dev.zymekoh.kohsanchors.sound.AnchorSounds;
 import java.util.ArrayDeque;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -11,9 +17,6 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.particles.ParticleTypes;
-import net.minecraft.sounds.SoundEvents;
-import net.minecraft.sounds.SoundSource;
-import net.minecraft.util.RandomSource;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.attribute.EnvironmentAttributes;
 import net.minecraft.world.entity.player.Player;
@@ -47,6 +50,14 @@ import net.minecraft.world.phys.Vec3;
  * certainly detonate is shown from the key or button handler, and the tick that then runs the use
  * only confirms it. This is drawing and sound only; the use itself still runs in the tick.</p>
  *
+ * <h2>When the server keeps the anchor</h2>
+ *
+ * <p>Every click carries a sequence number, and the server acknowledges it after it has handled
+ * the click and sent the block's new state. If the anchor is still in the client world when its
+ * detonation click is acknowledged, the server did not explode it (a rejected click, a protected
+ * area): it is drawn again at once, instead of staying invisible until a timeout, and the clicks
+ * that were waiting for it are dropped rather than landed on it.</p>
+ *
  * <h2>Why the anchor is not removed from the client world</h2>
  *
  * <p>Removing it at once lets the next anchor go down before the server's removal reaches the
@@ -58,14 +69,19 @@ import net.minecraft.world.phys.Vec3;
 public final class DetonationPredictor {
     /** Longer than any round trip worth playing on; a later explosion is treated as a new one. */
     private static final long CONFIRM_WINDOW_NANOS = 1_500_000_000L;
-    /** An input-time prediction the next ticks did not confirm is taken back after this. */
+    /**
+     * An input-time prediction the next ticks did not confirm is taken back after this, unless its
+     * click is still queued (a tick that already clicked with another item leaves it for the next
+     * one); a click queued longer than the hard limit is not coming.
+     */
     private static final long INPUT_CONFIRM_NANOS = 250_000_000L;
+    private static final long INPUT_CONFIRM_LIMIT_NANOS = 600_000_000L;
     private static final int MAX_PENDING = 16;
     private static final double SAME_CENTER = 1.0E-3;
 
     private static final ArrayDeque<Pending> PENDING = new ArrayDeque<>();
-    /** Anchors this client detonated that the server has not removed yet, with when. */
-    private static final Map<BlockPos, Long> DETONATING = new HashMap<>();
+    /** Anchors this client detonated that the server has not removed yet. */
+    private static final Map<BlockPos, Detonation> DETONATING = new HashMap<>();
     /** Detonations shown from the input handler, waiting for the tick's use to confirm them. */
     private static final Map<BlockPos, Long> SHOWN_AT_INPUT = new HashMap<>();
 
@@ -93,11 +109,17 @@ public final class DetonationPredictor {
                 || anchorsWork(clientLevel, position)) {
             return;
         }
+        AnchorDebounce.noteAnchorPlay();
+        // This runs inside the prediction of the click being sent: its sequence number is the one
+        // the server will acknowledge.
+        int sequence = currentSequence(clientLevel);
         if (usePredictedElsewhere) {
+            stamp(position, sequence);
             return;
         }
         if (SHOWN_AT_INPUT.remove(position) != null) {
             // Shown when the click was pressed; this tick is the use it predicted.
+            stamp(position, sequence);
             return;
         }
         if (isDetonating(position) && !(AnchorVeil.predicted(position) instanceof BlockState shown && isCharged(shown))) {
@@ -105,6 +127,7 @@ public final class DetonationPredictor {
             return;
         }
         detonate(clientLevel, position);
+        stamp(position, sequence);
     }
 
     /**
@@ -114,8 +137,8 @@ public final class DetonationPredictor {
     public static void detonate(ClientLevel level, BlockPos position) {
         long now = System.nanoTime();
         BlockPos key = position.immutable();
-        DETONATING.put(key, now);
-        if (AnchorsConfig.settings().hideDetonating || AnchorsConfig.settings().fastChain) {
+        DETONATING.put(key, new Detonation(now));
+        if (AnchorsConfig.settings().hideDetonating || ServerLock.fastChain()) {
             AnchorVeil.predict(level, key, AnchorVeil.air(), AnchorVeil.air());
         }
         if (!AnchorsConfig.settings().predictDetonation) {
@@ -129,11 +152,9 @@ public final class DetonationPredictor {
         PENDING.addLast(new Pending(center, now));
 
         // The same sound and flash, with the same parameters, that Vanilla plays for the server's
-        // explosion packet of an anchor.
-        RandomSource random = level.getRandom();
-        level.playLocalSound(center.x, center.y, center.z, SoundEvents.GENERIC_EXPLODE.value(),
-                SoundSource.BLOCKS, 4.0F, (1.0F + (random.nextFloat() - random.nextFloat()) * 0.2F) * 0.7F, false);
-        level.addParticle(ParticleTypes.EXPLOSION_EMITTER, center.x, center.y, center.z, 1.0D, 0.0D, 0.0D);
+        // explosion packet of an anchor, or the player's own sound when they chose one.
+        AnchorSounds.playExplosion(level, center.x, center.y, center.z);
+        AnchorSmoke.flash(level, center.x, center.y, center.z);
         AnchorStats.predictedDetonation();
     }
 
@@ -157,6 +178,15 @@ public final class DetonationPredictor {
         detonate(level, position);
         SHOWN_AT_INPUT.put(position.immutable(), System.nanoTime());
         return true;
+    }
+
+    /**
+     * Whether a detonation of the anchor at {@code position} was shown when its click was pressed
+     * and still waits for the tick's use. That use is the click itself: it must run, never wait
+     * for the removal its own detonation will cause.
+     */
+    public static boolean awaitsUse(BlockPos position) {
+        return position != null && SHOWN_AT_INPUT.containsKey(position);
     }
 
     /**
@@ -202,27 +232,65 @@ public final class DetonationPredictor {
     }
 
     /**
-     * Whether the client detonated the anchor at {@code position} and the server has not removed
-     * it yet. A detonation the server never answers stops counting after the confirm window.
+     * Whether the client detonated the anchor at {@code position} and the server has neither
+     * removed it nor said it kept it. A detonation the server never answers stops counting after
+     * the confirm window.
      */
     public static boolean isDetonating(BlockPos position) {
-        Long since = DETONATING.get(position);
-        if (since == null) {
+        Detonation detonation = DETONATING.get(position);
+        if (detonation == null || detonation.failed) {
             return false;
         }
-        if (System.nanoTime() - since > CONFIRM_WINDOW_NANOS) {
+        if (System.nanoTime() - detonation.since > CONFIRM_WINDOW_NANOS) {
             DETONATING.remove(position);
             return false;
         }
         return true;
     }
 
-    /** Every block state the server sends. Anything but an anchor means the anchor is gone. */
-    public static void onServerBlock(ClientLevel level, BlockPos position, BlockState state) {
-        if (!DETONATING.isEmpty() && !state.is(Blocks.RESPAWN_ANCHOR)) {
+    /** Whether the server acknowledged the detonation click at {@code position} and kept the anchor. */
+    public static boolean failed(BlockPos position) {
+        Detonation detonation = DETONATING.get(position);
+        return detonation != null && detonation.failed;
+    }
+
+    /** Forgets a detonation the server kept, once the clicks waiting for it have been dropped. */
+    public static void forget(BlockPos position) {
+        Detonation detonation = DETONATING.get(position);
+        if (detonation != null && detonation.failed) {
             DETONATING.remove(position);
         }
+    }
+
+    /** Every block state the server sends. Anything but an anchor means the anchor is gone. */
+    public static void onServerBlock(ClientLevel level, BlockPos position, BlockState state) {
+        if (!DETONATING.isEmpty() && !state.is(Blocks.RESPAWN_ANCHOR) && DETONATING.remove(position) != null) {
+            AnchorCycles.exploded(position);
+        }
         AnchorVeil.onServerBlock(level, position, state);
+    }
+
+    /**
+     * The server acknowledged every click up to {@code sequence}. A detonation among them whose
+     * anchor is still in the world was not exploded: it is drawn again now.
+     */
+    public static void onAcknowledged(ClientLevel level, int sequence) {
+        if (DETONATING.isEmpty()) {
+            return;
+        }
+        for (Map.Entry<BlockPos, Detonation> entry : DETONATING.entrySet()) {
+            Detonation detonation = entry.getValue();
+            if (detonation.failed || detonation.sequence < 0 || detonation.sequence > sequence) {
+                continue;
+            }
+            BlockPos position = entry.getKey();
+            if (level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR)) {
+                detonation.failed = true;
+                SHOWN_AT_INPUT.remove(position);
+                AnchorVeil.lift(level, position);
+                AnchorStats.keptDetonation();
+            }
+        }
     }
 
     /** Once a client tick: detonations shown at input that no use confirmed are taken back. */
@@ -231,13 +299,37 @@ public final class DetonationPredictor {
             return;
         }
         long now = System.nanoTime();
+        boolean usePending = ((KeyMappingAccessor) minecraft.options.keyUse).kohsAnchors$clickCount() > 0;
         Iterator<Map.Entry<BlockPos, Long>> iterator = SHOWN_AT_INPUT.entrySet().iterator();
         while (iterator.hasNext()) {
             Map.Entry<BlockPos, Long> entry = iterator.next();
-            if (now - entry.getValue() > INPUT_CONFIRM_NANOS) {
+            long age = now - entry.getValue();
+            if (age > INPUT_CONFIRM_LIMIT_NANOS || age > INPUT_CONFIRM_NANOS && !usePending) {
                 iterator.remove();
                 DETONATING.remove(entry.getKey());
                 AnchorVeil.lift(minecraft.level, entry.getKey());
+            }
+        }
+    }
+
+    /**
+     * The first use of a tick is the click a detonation was shown for when it was pressed (only a
+     * lone use press is ever shown). Aimed elsewhere now (the crosshair moved between the press and
+     * the tick), that detonation is not going to happen: it is taken back at once, so the anchor
+     * is drawn again instead of staying hidden while it still stands.
+     */
+    public static void firstUseOfTick(ClientLevel level, BlockPos target) {
+        if (SHOWN_AT_INPUT.isEmpty() || level == null) {
+            return;
+        }
+        Iterator<Map.Entry<BlockPos, Long>> iterator = SHOWN_AT_INPUT.entrySet().iterator();
+        while (iterator.hasNext()) {
+            BlockPos shown = iterator.next().getKey();
+            if (!shown.equals(target)) {
+                iterator.remove();
+                DETONATING.remove(shown);
+                AnchorVeil.lift(level, shown);
+                AnchorStats.withdrawnDetonation();
             }
         }
     }
@@ -271,11 +363,31 @@ public final class DetonationPredictor {
         }
         // The server sends the explosion before the block changes, so an anchor explosion still
         // finds its anchor on the client.
-        return !handlingPredicted && !level.getBlockState(BlockPos.containing(center)).is(Blocks.RESPAWN_ANCHOR);
+        return !handlingPredicted && !isAnchorExplosion(level, center);
+    }
+
+    /** Whether an explosion centred at {@code center} is an anchor's: its anchor is still there. */
+    public static boolean isAnchorExplosion(ClientLevel level, Vec3 center) {
+        return level.getBlockState(BlockPos.containing(center)).is(Blocks.RESPAWN_ANCHOR);
     }
 
     static boolean isCharged(BlockState state) {
         return state.is(Blocks.RESPAWN_ANCHOR) && state.getValue(RespawnAnchorBlock.CHARGE) > 0;
+    }
+
+    private static void stamp(BlockPos position, int sequence) {
+        Detonation detonation = DETONATING.get(position);
+        if (detonation != null && sequence >= 0) {
+            detonation.sequence = sequence;
+        }
+    }
+
+    private static int currentSequence(ClientLevel level) {
+        try {
+            return ((ClientLevelPredictionAccessor) level).kohsAnchors$predictionHandler().currentSequence();
+        } catch (RuntimeException unavailable) {
+            return -1;
+        }
     }
 
     private static boolean confirm(double x, double y, double z, long now) {
@@ -301,5 +413,16 @@ public final class DetonationPredictor {
     }
 
     private record Pending(Vec3 center, long createdAt) {
+    }
+
+    /** One detonation: when it was shown, the click's sequence number, and whether it failed. */
+    private static final class Detonation {
+        final long since;
+        int sequence = -1;
+        boolean failed;
+
+        Detonation(long since) {
+            this.since = since;
+        }
     }
 }

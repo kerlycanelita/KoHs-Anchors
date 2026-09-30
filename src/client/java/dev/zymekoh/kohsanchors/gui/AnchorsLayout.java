@@ -7,14 +7,15 @@ package dev.zymekoh.kohsanchors.gui;
  * <p>Three shapes: STANDARD shows the options beside the 3D anchor and the session numbers;
  * COMPACT drops the anchor column and tightens the spacing; TIGHT keeps only what is needed to
  * change a setting and leave. The tab bar always sits between the header and the options, and the
- * options always scroll before anything overlaps. The warning modal has its own geometry.</p>
+ * options always scroll before anything overlaps. The warning modal and the anchor workshop have
+ * their own geometry.</p>
  */
 final class AnchorsLayout {
     static final int MAX_PANEL_WIDTH = 620;
     static final int MAX_PANEL_HEIGHT = 380;
     /** Room on the right of the options for the scrollbar. */
     static final int SCROLL_GUTTER = 6;
-    static final int TAB_COUNT = 4;
+    static final int TAB_COUNT = 5;
     /** Below this a tab shows its icon only. */
     static final int MIN_TAB_WIDTH = 24;
 
@@ -96,6 +97,30 @@ final class AnchorsLayout {
         return this.preview.width() > 0;
     }
 
+    /** The whole body under the tabs: the options and the anchor column together. */
+    Rect body() {
+        int right = showsPreview() ? this.preview.right() : this.options.right();
+        return new Rect(this.options.x(), this.options.y(), right - this.options.x(), this.options.height());
+    }
+
+    /**
+     * The anchor workshop inside {@code body}: a rail of modes and tools on the left, the stage
+     * with the anchor in the middle and a rail with the layers and the colour on the right. On a
+     * narrow body the left rail shows icons only.
+     */
+    static Workshop workshop(Rect body) {
+        boolean narrow = body.width() < 420;
+        int gap = narrow ? 4 : 6;
+        int leftWidth = narrow ? 26 : clamp(Math.round(body.width() * 0.19F), 88, 112);
+        int rightWidth = narrow ? clamp(Math.round(body.width() * 0.42F), 104, 176)
+                : clamp(Math.round(body.width() * 0.33F), 150, 204);
+        Rect left = new Rect(body.x(), body.y(), leftWidth, body.height());
+        Rect right = new Rect(body.right() - rightWidth, body.y(), rightWidth, body.height());
+        Rect stage = new Rect(left.right() + gap, body.y(), Math.max(0, right.x() - gap - left.right() - gap),
+                body.height());
+        return new Workshop(left, stage, right, narrow);
+    }
+
     /** Width of an option row inside the scrolling area. */
     int rowWidth() {
         return Math.max(0, this.options.width() - SCROLL_GUTTER);
@@ -128,6 +153,9 @@ final class AnchorsLayout {
     }
 
     record Modal(Rect box, Rect cancel, Rect confirm, int padding) {
+    }
+
+    record Workshop(Rect left, Rect stage, Rect right, boolean narrow) {
     }
 
     record Rect(int x, int y, int width, int height) {

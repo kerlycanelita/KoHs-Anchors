@@ -36,15 +36,19 @@ def matrixValues = matrixEntry.split(',').collect { it.trim() }
 
 // The source tree is written against 26.2, the development focus. The other targets reuse it:
 //
-//   modern  (26.2, 26.3)            compiled as is.
+//   modern  (26.2)                  compiled as is.
+//   pearl   (26.3)                  the GPU classes moved to com.mojang.renderpearl, so
+//                                   src/compat/pearl replaces the atlas writer and the glow
+//                                   material; everything else is 26.2's.
 //   classic (26.1, 26.1.1, 26.1.2)  the screen still lives on Minecraft instead of Gui, so
 //                                   src/compat/classic replaces the compat layer.
 //   legacy  (1.21.11)               obfuscated and remapped from Mojang's names, pick() lives on
 //                                   GameRenderer and the GUI uses the 1.21 GuiGraphics API.
 //
-// Everything that differs between eras goes through dev.zymekoh.kohsanchors.compat.Mc, so the
-// input and prediction logic is byte-for-byte the same source on every target.
-def era = mc.startsWith('1.') ? 'legacy' : (mc in ['26.1', '26.1.1', '26.1.2'] ? 'classic' : 'modern')
+// Everything that differs between eras goes through dev.zymekoh.kohsanchors.compat, so the input,
+// prediction, skin and glow logic is byte-for-byte the same source on every target.
+def era = mc.startsWith('1.') ? 'legacy'
+		: (mc in ['26.1', '26.1.1', '26.1.2'] ? 'classic' : (mc == '26.3' ? 'pearl' : 'modern'))
 def usesRemapping = era == 'legacy'
 apply plugin: usesRemapping ? 'net.fabricmc.fabric-loom-remap' : 'net.fabricmc.fabric-loom'
 

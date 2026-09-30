@@ -93,6 +93,24 @@ public final class AnchorsLayoutCheck {
             }
         }
 
+        // The anchor workshop shares the body between its two rails and the stage.
+        AnchorsLayout.Rect body = layout.body();
+        inside(size + "body", body, panel, failures);
+        AnchorsLayout.Workshop workshop = AnchorsLayout.workshop(body);
+        inside(size + "workshop left", workshop.left(), body, failures);
+        inside(size + "workshop stage", workshop.stage(), body, failures);
+        inside(size + "workshop right", workshop.right(), body, failures);
+        if (workshop.left().intersects(workshop.stage()) || workshop.stage().intersects(workshop.right())
+                || workshop.left().intersects(workshop.right())) {
+            failures.add(size + "workshop regions overlap");
+        }
+        if (workshop.stage().width() < 56) {
+            failures.add(size + "workshop stage too narrow for the anchor: " + workshop.stage());
+        }
+        if (workshop.right().width() < 104) {
+            failures.add(size + "workshop colour rail too narrow for the picker: " + workshop.right());
+        }
+
         AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
         inside(size + "modal", modal.box(), screen, failures);
         inside(size + "modal cancel", modal.cancel(), modal.box(), failures);
