@@ -27,11 +27,14 @@ abstract class ClientLevelServerStateMixin {
 
     /**
      * After the acknowledgement of a click: by then the server has handled it and sent the states
-     * it left behind, so an anchor still standing after its detonation click was not exploded.
+     * it left behind, so an anchor still standing after its detonation click was not exploded, and
+     * a placement the server did not answer with an anchor is no longer waiting for one.
      */
     @Inject(method = "handleBlockChangedAck", at = @At("TAIL"))
     private void kohsAnchors$acknowledged(int sequence, CallbackInfo callback) {
-        DetonationPredictor.onAcknowledged((ClientLevel) (Object) this, sequence);
+        ClientLevel level = (ClientLevel) (Object) this;
+        DetonationPredictor.onAcknowledged(level, sequence);
+        AnchorTracker.onAcknowledged(level, sequence);
     }
 
     /**

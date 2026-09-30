@@ -48,6 +48,7 @@ public final class AnchorDebounce {
     private static long pendingAt;
     private static int pendingSlot;
     private static BlockPos pendingTarget;
+    private static BlockPos pendingAlternative;
 
     private AnchorDebounce() {
     }
@@ -97,7 +98,18 @@ public final class AnchorDebounce {
         pendingIntent = intent;
         pendingAt = now;
         pendingSlot = slot;
-        pendingTarget = state.canBeReplaced() ? clicked.immutable() : clicked.relative(hit.getDirection()).immutable();
+        // Where the anchor goes: the clicked block when it can be replaced (fire, grass), else the
+        // one beside it. Vanilla asks the block in the context of the placement, which can differ
+        // for a few blocks (layered snow), so the other one is kept as an alternative unless it is
+        // a full block that no anchor can take.
+        BlockPos beside = clicked.relative(hit.getDirection()).immutable();
+        if (state.canBeReplaced()) {
+            pendingTarget = clicked.immutable();
+            pendingAlternative = beside;
+        } else {
+            pendingTarget = beside;
+            pendingAlternative = state.isSolidRender() ? null : clicked.immutable();
+        }
         return false;
     }
 
@@ -112,7 +124,7 @@ public final class AnchorDebounce {
         if (intent == Intent.PLACE_ANCHOR) {
             ANCHORS.start(pendingAt, pendingSlot);
             if (player.level() instanceof ClientLevel level) {
-                AnchorTracker.ownPlacement(level, pendingTarget);
+                AnchorTracker.ownPlacement(level, pendingTarget, pendingAlternative);
                 AnchorCycles.placed(pendingTarget);
             }
         } else {

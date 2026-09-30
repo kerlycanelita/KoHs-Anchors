@@ -206,6 +206,9 @@ public final class AnchorsConfig {
         /** Keeps the skin and the glow in step with KoHs Crystal Tweaks' crystal colours. */
         public boolean crystalColors = false;
 
+        /** Says what enemy anchors are before their page opens; "Don't show again" turns it off. */
+        public boolean enemyIntro = true;
+
         void sanitize() {
             this.anchorDebounceMillis = clamp(this.anchorDebounceMillis, 0, MAX_DEBOUNCE_MILLIS);
             this.glowstoneDebounceMillis = clamp(this.glowstoneDebounceMillis, 0, MAX_DEBOUNCE_MILLIS);

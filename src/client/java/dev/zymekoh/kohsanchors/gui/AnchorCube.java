@@ -33,7 +33,6 @@ import org.joml.Matrix3x2f;
  * that is not being edited with a heartbeat, and light the one that is.</p>
  */
 final class AnchorCube {
-    private static final Identifier TEXTURE = Identifier.fromNamespaceAndPath(KoHsAnchorsClient.MOD_ID, "workshop/anchor");
     private static final Direction[] DIRECTIONS = Direction.values();
     /** Grid lines are drawn in 1/64ths of a texture pixel, fine enough for one screen pixel. */
     private static final int SUB = 64;
@@ -41,6 +40,8 @@ final class AnchorCube {
     private static final int KIND_MAJOR = 1;
     private static final int KIND_EDGE = 2;
 
+    /** Each cube keeps its own texture, so the workshop's and the enemy preview's never clash. */
+    private final Identifier textureId;
     private DynamicTexture texture;
     private int resolution;
     private int builtGeneration = Integer.MIN_VALUE;
@@ -64,6 +65,11 @@ final class AnchorCube {
     private int runsStamp = -1;
 
     AnchorCube() {
+        this("anchor");
+    }
+
+    AnchorCube(String name) {
+        this.textureId = Identifier.fromNamespaceAndPath(KoHsAnchorsClient.MOD_ID, "workshop/" + name);
         for (int index = 0; index < 6; index++) {
             this.faces[index] = new Matrix3x2f();
         }
@@ -119,7 +125,7 @@ final class AnchorCube {
             close();
             this.resolution = size;
             this.texture = new DynamicTexture(() -> "KoHs Anchor's workshop", size * 3, size * 3, true);
-            Minecraft.getInstance().getTextureManager().register(TEXTURE, this.texture);
+            Minecraft.getInstance().getTextureManager().register(this.textureId, this.texture);
         }
         NativeImage pixels = this.texture.getPixels();
         if (pixels == null) {
@@ -170,7 +176,7 @@ final class AnchorCube {
 
     void close() {
         if (this.texture != null) {
-            Minecraft.getInstance().getTextureManager().release(TEXTURE);
+            Minecraft.getInstance().getTextureManager().release(this.textureId);
             this.texture = null;
         }
     }
@@ -238,6 +244,14 @@ final class AnchorCube {
      * other layer (0 to 1) and {@code lift} lights the edited one.
      */
     void draw(GuiGraphicsExtractor graphics, float alpha, byte editing, float dim, float lift) {
+        draw(graphics, alpha, editing, dim, lift, 0xC084FC);
+    }
+
+    /**
+     * The same, lighting the edited layer in {@code liftColor} (RGB): the enemy preview lights the
+     * glow layer in the enemy colour, as their glow does in the world.
+     */
+    void draw(GuiGraphicsExtractor graphics, float alpha, byte editing, float dim, float lift, int liftColor) {
         if (this.texture == null || alpha <= 0.01F) {
             return;
         }
@@ -258,18 +272,18 @@ final class AnchorCube {
             int tint = Math.round(255.0F * alpha) << 24 | grey << 16 | grey << 8 | grey;
             graphics.pose().pushMatrix();
             graphics.pose().mul(this.faces[direction.ordinal()]);
-            graphics.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, 0, 0, column * size, 0, size, size, textureSize, textureSize,
+            graphics.blit(RenderPipelines.GUI_TEXTURED, this.textureId, 0, 0, column * size, 0, size, size, textureSize, textureSize,
                     tint);
             if (editing != 0 && dim > 0.01F) {
                 int otherRow = editing == AnchorTextures.FRAME ? 2 : 1;
                 int darkness = Math.round(255.0F * Math.min(1.0F, dim) * alpha) << 24 | 0x05020A;
-                graphics.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, 0, 0, column * size, otherRow * size, size, size,
+                graphics.blit(RenderPipelines.GUI_TEXTURED, this.textureId, 0, 0, column * size, otherRow * size, size, size,
                         textureSize, textureSize, darkness);
             }
             if (editing != 0 && lift > 0.01F) {
                 int row = editing == AnchorTextures.FRAME ? 1 : 2;
-                int light = Math.round(255.0F * Math.min(1.0F, lift) * alpha) << 24 | 0xC084FC;
-                graphics.blit(RenderPipelines.GUI_TEXTURED, TEXTURE, 0, 0, column * size, row * size, size, size,
+                int light = Math.round(255.0F * Math.min(1.0F, lift) * alpha) << 24 | (liftColor & 0xFFFFFF);
+                graphics.blit(RenderPipelines.GUI_TEXTURED, this.textureId, 0, 0, column * size, row * size, size, size,
                         textureSize, textureSize, light);
             }
             graphics.pose().popMatrix();

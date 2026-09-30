@@ -1,7 +1,11 @@
 package dev.zymekoh.kohsanchors.glow;
 
+import dev.zymekoh.kohsanchors.mixin.ClientLevelPredictionAccessor;
 import it.unimi.dsi.fastutil.longs.Long2ByteMap;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2IntMap;
+import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.client.Minecraft;
@@ -18,10 +22,15 @@ import net.minecraft.world.level.chunk.status.ChunkStatus;
  * The respawn anchors near the player, and who put each one there.
  *
  * <p>The client never learns who placed a block. It does know its own placements: every anchor
- * the player places goes through {@code useItemOn}, and Vanilla predicts the block at once. So an
- * anchor that appears from a server update where this client placed nothing is someone else's:
- * an enemy's. Anchors that were already there when their chunk arrived have no known owner and
- * glow like the player's own.</p>
+ * the player places goes through {@code useItemOn}, Vanilla predicts the block at once and stamps
+ * the click with a sequence number, and the server answers that number with an acknowledgement
+ * only after it has sent the states the click left behind. So an anchor the server reports at a
+ * block while the player's placement there is still waiting for its acknowledgement is the
+ * player's; once acknowledged, the placement is spent, and the next anchor to appear at that block
+ * is someone else's even seconds later, as happens when two players keep using the same hole. An
+ * anchor that appears from a server update where this client has no placement in flight is an
+ * enemy's. Anchors that were already there when their chunk arrived have no known owner and glow
+ * like the player's own.</p>
  *
  * <p>Discovery is event-driven for new anchors (server block updates and own placements) and a
  * small periodic scan for the ones that came with a chunk. The scan only walks sections whose block
@@ -41,12 +50,18 @@ public final class AnchorTracker {
     /** How far above and below the player, in sections. */
     private static final int RADIUS_SECTIONS = 2;
     private static final int SCAN_INTERVAL_TICKS = 10;
-    /** A server update this soon after the player's own placement at that block is the player's. */
-    private static final long OWN_WINDOW_NANOS = 4_000_000_000L;
+    /**
+     * A placement whose acknowledgement never came (the connection dropped) is forgotten after
+     * this; a real acknowledgement takes one round trip.
+     */
+    private static final long PENDING_LIMIT_NANOS = 5_000_000_000L;
     private static final int MAX_TRACKED = 256;
+    private static final int MAX_PENDING = 64;
 
     private static final Long2ByteOpenHashMap OWNERS = new Long2ByteOpenHashMap();
-    private static final Long2LongOpenHashMap OWN_PLACED_AT = new Long2LongOpenHashMap();
+    /** The player's placements waiting for their acknowledgement: block → the click's sequence number. */
+    private static final Long2IntOpenHashMap OWN_PENDING = new Long2IntOpenHashMap();
+    private static final Long2LongOpenHashMap OWN_PENDING_AT = new Long2LongOpenHashMap();
     private static final BlockPos.MutableBlockPos CURSOR = new BlockPos.MutableBlockPos();
     private static ClientLevel trackedLevel;
     private static int scanCountdown;
@@ -73,20 +88,60 @@ public final class AnchorTracker {
         return enemies;
     }
 
-    /** The player placed an anchor at {@code position}; Vanilla has already predicted it. */
-    public static void ownPlacement(ClientLevel level, BlockPos position) {
+    /**
+     * The player placed an anchor at {@code position}, or at {@code alternative} if Vanilla judged
+     * the clicked block replaceable differently; Vanilla has already predicted it and stamped the
+     * click with a sequence number, which is still the prediction handler's current one.
+     */
+    public static void ownPlacement(ClientLevel level, BlockPos position, BlockPos alternative) {
         if (position == null) {
             return;
         }
         ensureLevel(level);
-        long key = position.asLong();
-        OWN_PLACED_AT.put(key, System.nanoTime());
-        if (OWN_PLACED_AT.size() > MAX_TRACKED) {
-            OWN_PLACED_AT.clear();
-            OWN_PLACED_AT.put(key, System.nanoTime());
+        int sequence = sequence(level);
+        long now = System.nanoTime();
+        if (OWN_PENDING.size() >= MAX_PENDING) {
+            OWN_PENDING.clear();
+            OWN_PENDING_AT.clear();
         }
-        if (level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR)) {
-            track(key, OWN);
+        for (BlockPos candidate : new BlockPos[] {position, alternative}) {
+            if (candidate == null) {
+                continue;
+            }
+            long key = candidate.asLong();
+            OWN_PENDING.put(key, sequence);
+            OWN_PENDING_AT.put(key, now);
+            // The prediction already put the anchor there: it is the player's from this frame on.
+            if (!OWNERS.containsKey(key) && level.getBlockState(candidate).is(Blocks.RESPAWN_ANCHOR)) {
+                track(key, OWN);
+            }
+        }
+    }
+
+    /**
+     * The server acknowledged the player's clicks up to {@code sequence}: by now it has sent every
+     * state those clicks left, so their placements are spent. An anchor that appears at one of those
+     * blocks from now on is someone else's.
+     */
+    public static void onAcknowledged(ClientLevel level, int sequence) {
+        if (level != trackedLevel || OWN_PENDING.isEmpty()) {
+            return;
+        }
+        ObjectIterator<Long2IntMap.Entry> iterator = OWN_PENDING.long2IntEntrySet().iterator();
+        while (iterator.hasNext()) {
+            Long2IntMap.Entry entry = iterator.next();
+            if (entry.getIntValue() <= sequence) {
+                OWN_PENDING_AT.remove(entry.getLongKey());
+                iterator.remove();
+            }
+        }
+    }
+
+    private static int sequence(ClientLevel level) {
+        try {
+            return ((ClientLevelPredictionAccessor) level).kohsAnchors$predictionHandler().currentSequence();
+        } catch (RuntimeException unavailable) {
+            return Integer.MAX_VALUE;
         }
     }
 
@@ -101,16 +156,17 @@ public final class AnchorTracker {
             return;
         }
         if (OWNERS.containsKey(key)) {
-            // A charge or a state the tracker already knows: the owner does not change.
+            // A charge, or the confirmation of an anchor the tracker already knows: the owner does
+            // not change. An anchor that exploded was forgotten when its air arrived.
             return;
         }
-        long placedAt = OWN_PLACED_AT.get(key);
-        if (placedAt != 0L && System.nanoTime() - placedAt < OWN_WINDOW_NANOS) {
+        if (OWN_PENDING.containsKey(key)) {
+            // The player's own placement there has not been acknowledged yet: this is its anchor.
             track(key, OWN);
         } else if (level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR)) {
             track(key, UNKNOWN);
         } else {
-            // A new anchor that this client did not place.
+            // A new anchor where this client has no placement in flight.
             track(key, ENEMY);
         }
     }
@@ -136,7 +192,8 @@ public final class AnchorTracker {
 
     public static void clear() {
         OWNERS.clear();
-        OWN_PLACED_AT.clear();
+        OWN_PENDING.clear();
+        OWN_PENDING_AT.clear();
         trackedLevel = null;
         scanCountdown = 0;
     }
@@ -151,7 +208,8 @@ public final class AnchorTracker {
     private static void ensureLevel(ClientLevel level) {
         if (level != trackedLevel) {
             OWNERS.clear();
-            OWN_PLACED_AT.clear();
+            OWN_PENDING.clear();
+            OWN_PENDING_AT.clear();
             trackedLevel = level;
             scanCountdown = 0;
         }
@@ -170,7 +228,14 @@ public final class AnchorTracker {
             }
         }
         long now = System.nanoTime();
-        OWN_PLACED_AT.long2LongEntrySet().removeIf(entry -> now - entry.getLongValue() > OWN_WINDOW_NANOS);
+        ObjectIterator<Long2LongMap.Entry> pending = OWN_PENDING_AT.long2LongEntrySet().iterator();
+        while (pending.hasNext()) {
+            Long2LongMap.Entry entry = pending.next();
+            if (now - entry.getLongValue() > PENDING_LIMIT_NANOS) {
+                OWN_PENDING.remove(entry.getLongKey());
+                pending.remove();
+            }
+        }
     }
 
     private static void scan(ClientLevel level, BlockPos center) {

@@ -118,6 +118,12 @@ public final class AnchorsScreen extends Screen {
     private AnchorWorkshop workshop;
     private AnchorsWarning warning;
     private GlowstoneGuardWarning guardWarning;
+    private EnemyIntro enemyIntro;
+    private EnemySwitch enemySwitch;
+    /** The enemy's anchor, as the world draws it: on the enemy page and in the switch. */
+    private final AnchorFigure enemyFigure = new AnchorFigure("enemy");
+    private boolean figureDragging;
+    private double figureDragDistance;
     private DevModeWarning devWarning;
     private CrystalModal crystalModal;
     private SoundPicker soundPicker;
@@ -367,8 +373,9 @@ public final class AnchorsScreen extends Screen {
         AnchorsConfig.EnemyGlow enemy = settings().enemyGlow;
         offset = note(offset, "enemy_about", () -> Component.translatable("kohs_anchors.enemy.badge").getString()
                         + " " + AnchorTracker.enemyCount(), AnchorsTheme.CRIMSON_BRIGHT,
-                "AnchorTracker.ENEMY: a new anchor this client did not place",
-                "ownPlacement ← MultiPlayerGameModeMixin @ useItemOn RETURN");
+                "AnchorTracker.ENEMY: a new anchor where no own placement is in flight",
+                "ownPlacement ← MultiPlayerGameModeMixin @ useItemOn RETURN (sequence stamped)",
+                "OWN_PENDING until ClientLevelServerStateMixin @ handleBlockChangedAck");
         offset = section(offset, "kohs_anchors.section.enemy_colour");
         offset = toggle(offset, "enemy_enabled", () -> enemy.enabled, value -> enemy.enabled = value,
                 "EnemyGlow.enabled", "tracked " + AnchorTracker.count() + " · enemies " + AnchorTracker.enemyCount());
@@ -628,13 +635,35 @@ public final class AnchorsScreen extends Screen {
 
     /**
      * The header switch: the whole screen turns to the enemy's anchors (their glow colour), in
-     * crimson, or back to the player's own.
+     * crimson, or back to the player's own ({@link EnemySwitch}). The first time, a word on what
+     * enemy anchors are comes first ({@link EnemyIntro}).
      */
     private void toggleEnemyAnchors() {
+        if (this.enemySwitch != null || this.enemyIntro != null) {
+            return;
+        }
+        boolean toEnemy = !enemyPage;
+        if (toEnemy && settings().enemyIntro) {
+            this.enemyIntro = new EnemyIntro(settings().interfaceMotion, this.enemyFigure, () -> startEnemySwitch(true));
+            return;
+        }
+        startEnemySwitch(toEnemy);
+    }
+
+    private void startEnemySwitch(boolean toEnemy) {
+        AnchorsLayout.Rect from = this.layout.showsPreview() && this.tab != ANCHOR ? this.previewArt : AnchorsLayout.Rect.EMPTY;
+        this.enemySwitch = new EnemySwitch(toEnemy, settings().interfaceMotion, this.enemyFigure, from, () -> {
+            switchPage(toEnemy);
+            if (this.enemySwitch != null) {
+                this.enemySwitch.landAt(this.layout.showsPreview() ? this.previewArt : AnchorsLayout.Rect.EMPTY);
+            }
+        });
+    }
+
+    /** Opens the enemy page (on the glow tab), or the player's own again. */
+    private void switchPage(boolean toEnemy) {
         long now = System.nanoTime();
-        enemyPage = !enemyPage;
-        this.enemySwitchedAt = now;
-        enemySound(enemyPage);
+        enemyPage = toEnemy;
         if (this.tab != GLOW) {
             if (this.tab == ANCHOR && this.workshop != null) {
                 this.workshop.close();
@@ -662,6 +691,11 @@ public final class AnchorsScreen extends Screen {
     /** The screen's danger colours: the Advanced tab, and the enemy's anchors. */
     private boolean crimson() {
         return this.tab == ADVANCED || enemyPage;
+    }
+
+    /** How red the background is: 1 on the enemy's page, in between while switching. */
+    private float enemyBlend() {
+        return this.enemySwitch != null ? this.enemySwitch.blend() : enemyPage ? 1.0F : 0.0F;
     }
 
     /**
@@ -725,7 +759,10 @@ public final class AnchorsScreen extends Screen {
         if (this.minecraft.level == null) {
             this.extractPanorama(graphics, partialTick);
         }
-        graphics.fillGradient(0, 0, this.width, this.height, AnchorsTheme.VEIL_TOP, AnchorsTheme.VEIL_BOTTOM);
+        // On the enemy's page the veil turns red; during the switch it turns by degrees.
+        float red = enemyBlend();
+        graphics.fillGradient(0, 0, this.width, this.height, AnchorsTheme.lerp(AnchorsTheme.VEIL_TOP, 0x86300818, red),
+                AnchorsTheme.lerp(AnchorsTheme.VEIL_BOTTOM, 0xB0180308, red));
         Mc.extractDeferredSubtitles(this.minecraft);
     }
 
@@ -773,6 +810,12 @@ public final class AnchorsScreen extends Screen {
         drawFooterNote(graphics, intro, this.tab == ADVANCED);
         super.extractRenderState(graphics, pointerX, pointerY, partialTick);
         drawEnemySwitch(graphics, motion, now);
+        if (this.enemySwitch != null) {
+            this.enemySwitch.render(graphics, this.width, this.height);
+            if (this.enemySwitch.done()) {
+                this.enemySwitch = null;
+            }
+        }
         AnchorsLayout.Rect reset = this.layout.resetButton;
         DevInspector.node("AnchorsButton", "reset tab", reset.x(), reset.y(), reset.width(), reset.height(),
                 "per-tab defaults, second click confirms");
@@ -815,6 +858,16 @@ public final class AnchorsScreen extends Screen {
             this.guardWarning.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
             if (this.guardWarning.done()) {
                 this.guardWarning = null;
+            }
+        }
+        if (this.enemyIntro != null) {
+            this.enemyIntro.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
+            if (this.enemyIntro.done()) {
+                if (this.enemyIntro.hideFromNowOn()) {
+                    settings().enemyIntro = false;
+                    AnchorsConfig.save();
+                }
+                this.enemyIntro = null;
             }
         }
         if (this.devWarning == null) {
@@ -1215,19 +1268,38 @@ public final class AnchorsScreen extends Screen {
                 AnchorsTheme.fade(advanced ? 0xC0FF6A86 : 0xC0C084FC, intro));
 
         // The ritual circle behind the anchor lights a node for every charge the anchor holds.
+        boolean enemyView = this.tab == GLOW && enemyPage;
         int radius = Math.round(Math.min(this.previewArt.width(), this.previewArt.height()) * 0.46F);
         if (radius > 16) {
             AnchorsUi.sigil(graphics, this.previewArt.centerX(), this.previewArt.centerY() + radius / 6, radius,
-                    motion ? seconds * 1.6D : 0.0D, advanced ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT,
-                    0.8F * intro, this.anchorPreview.charge());
+                    motion ? seconds * 1.6D : 0.0D, advanced || enemyView ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT,
+                    0.8F * intro, enemyView ? this.enemyFigure.charge() : this.anchorPreview.charge());
         }
-        if (this.tab == GLOW) {
+        if (this.enemySwitch != null) {
+            // The anchor is on its way between the two pages: the switch draws it.
+        } else if (enemyView) {
+            // The enemy's anchor exactly as a fight shows it: the same block, lit in their colour.
+            float scale = Math.min(this.previewArt.width(), this.previewArt.height()) / 2.4F;
+            this.enemyFigure.draw(graphics, this.previewArt.centerX(), this.previewArt.y() + this.previewArt.height() / 2.0F,
+                    scale, intro, 1.0F, motion, true);
+            if (this.previewArt.contains(mouseX, mouseY)) {
+                List<FormattedCharSequence> hint = this.font.split(Component.translatable("kohs_anchors.enemy.preview.hint"),
+                        Math.max(40, this.previewArt.width() - 6));
+                int lineY = this.previewArt.bottom() - 10 * Math.min(2, hint.size());
+                for (int index = 0; index < Math.min(2, hint.size()); index++) {
+                    FormattedCharSequence line = hint.get(index);
+                    AnchorsUi.line(graphics, this.font, line, this.previewArt.centerX() - this.font.width(line) / 2,
+                            lineY + index * 10, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro));
+                }
+            }
+            DevInspector.node("AnchorFigure", "enemy anchor", this.previewArt.x(), this.previewArt.y(), this.previewArt.width(),
+                    this.previewArt.height(), "AnchorCube(\"enemy\"): glow layer lit in EnemyGlow.color",
+                    "EnemyGlow.color = " + ColorMath.hex(settings().enemyGlow.color), "drag: turn · click: charge");
+        } else if (this.tab == GLOW) {
             // The glow as it will look: its colour and strength around the anchor, and on the ground.
             AnchorsConfig.Glow glow = settings().glow;
-            boolean enemy = enemyPage;
-            int color = enemy ? settings().enemyGlow.color
-                    : AnchorGlowRenderer.ownColor(Math.max(1, Math.round(this.anchorPreview.charge())));
-            boolean on = enemy ? settings().enemyGlow.enabled && glow.enabled : glow.enabled;
+            int color = AnchorGlowRenderer.ownColor(Math.max(1, Math.round(this.anchorPreview.charge())));
+            boolean on = glow.enabled;
             if (on) {
                 float charge = this.anchorPreview.charge() / 4.0F;
                 float power = glow.power / 100.0F * (glow.chargeScaling ? 0.4F + 0.6F * charge : 1.0F);
@@ -1242,12 +1314,13 @@ public final class AnchorsScreen extends Screen {
                         color & 0xFFFFFF, Math.min(1.0F, power * glow.spill / 100.0F * breathe));
             }
         }
-        this.anchorPreview.lightOverride(this.tab == GLOW && enemyPage && settings().enemyGlow.enabled
-                ? settings().enemyGlow.color : 0);
-        this.anchorPreview.render(graphics, this.font, this.previewArt, mouseX, mouseY, motion, intro, this.previewHint);
-        DevInspector.node("AnchorPreview", "3D anchor", this.previewArt.x(), this.previewArt.y(), this.previewArt.width(),
-                this.previewArt.height(), "FallingBlockRenderState → GuiGraphics.entity", "block atlas: the skin shows here",
-                "FullBrightLightEngine");
+        if (this.enemySwitch == null && !enemyView) {
+            this.anchorPreview.lightOverride(0);
+            this.anchorPreview.render(graphics, this.font, this.previewArt, mouseX, mouseY, motion, intro, this.previewHint);
+            DevInspector.node("AnchorPreview", "3D anchor", this.previewArt.x(), this.previewArt.y(), this.previewArt.width(),
+                    this.previewArt.height(), "FallingBlockRenderState → GuiGraphics.entity", "block atlas: the skin shows here",
+                    "FullBrightLightEngine");
+        }
 
         int statsTop = preview.bottom() - STATS_HEIGHT - 8;
         AnchorsUi.energyLine(graphics, preview.x() + 8, preview.right() - 8, statsTop - 1,
@@ -1350,6 +1423,15 @@ public final class AnchorsScreen extends Screen {
         if (this.guardWarning != null) {
             return this.guardWarning.mouseClicked(this.font, this.width, this.height, mouseX, mouseY, button);
         }
+        if (this.enemyIntro != null) {
+            return this.enemyIntro.mouseClicked(this.width, this.height, mouseX, mouseY, button);
+        }
+        if (this.enemySwitch != null) {
+            // A click hurries the switch to its end.
+            this.enemySwitch.skip();
+            this.enemySwitch = null;
+            return true;
+        }
         if (this.crystalModal != null) {
             return this.crystalModal.mouseClicked(this.width, this.height, mouseX, mouseY, button);
         }
@@ -1400,7 +1482,13 @@ public final class AnchorsScreen extends Screen {
                     }
                 }
             }
-            if (this.anchorPreview.mouseClicked(this.previewArt, mouseX, mouseY, button, doubleClick)) {
+            if (this.tab == GLOW && enemyPage) {
+                if (button == 0 && this.previewArt.contains(mouseX, mouseY)) {
+                    this.figureDragging = true;
+                    this.figureDragDistance = 0.0D;
+                    return true;
+                }
+            } else if (this.anchorPreview.mouseClicked(this.previewArt, mouseX, mouseY, button, doubleClick)) {
                 return true;
             }
         }
@@ -1410,7 +1498,12 @@ public final class AnchorsScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
-                || this.guardWarning != null) {
+                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null) {
+            return true;
+        }
+        if (this.figureDragging) {
+            this.enemyFigure.drag(dragX, dragY);
+            this.figureDragDistance += Math.abs(dragX) + Math.abs(dragY);
             return true;
         }
         if (this.popover != null) {
@@ -1439,7 +1532,17 @@ public final class AnchorsScreen extends Screen {
         if (this.warning != null) {
             return this.warning.mouseReleased();
         }
-        if (this.devWarning != null || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null) {
+        if (this.devWarning != null || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
+                || this.enemyIntro != null || this.enemySwitch != null) {
+            return true;
+        }
+        if (this.figureDragging) {
+            this.figureDragging = false;
+            if (this.figureDragDistance < 3.0D) {
+                // A click, not a drag: one more charge, with the charge sound the player chose.
+                this.enemyFigure.cycleCharge();
+                AnchorSounds.previewCharge(0.9F + this.enemyFigure.charge() * 0.05F);
+            }
             return true;
         }
         if (this.popover != null) {
@@ -1468,7 +1571,7 @@ public final class AnchorsScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.popover != null
-                || this.guardWarning != null) {
+                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null) {
             return true;
         }
         if (this.soundPicker != null) {
@@ -1492,6 +1595,16 @@ public final class AnchorsScreen extends Screen {
         int key = event.key();
         if (this.guardWarning != null) {
             return this.guardWarning.keyPressed(key);
+        }
+        if (this.enemyIntro != null) {
+            return this.enemyIntro.keyPressed(key);
+        }
+        if (this.enemySwitch != null) {
+            if (key == 256) {
+                this.enemySwitch.skip();
+                this.enemySwitch = null;
+            }
+            return true;
         }
         if (this.crystalModal != null) {
             return this.crystalModal.keyPressed(key);
@@ -1643,7 +1756,7 @@ public final class AnchorsScreen extends Screen {
     /** Whether a warning, picker or popover owns the pointer and the keyboard. */
     private boolean modalOpen() {
         return this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
-                || this.popover != null || this.guardWarning != null;
+                || this.popover != null || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null;
     }
 
     private void saveSettings() {
@@ -1652,6 +1765,12 @@ public final class AnchorsScreen extends Screen {
             this.guardWarning.close();
             this.guardWarning = null;
         }
+        if (this.enemySwitch != null) {
+            this.enemySwitch.skip();
+            this.enemySwitch = null;
+        }
+        this.enemyIntro = null;
+        this.enemyFigure.close();
         if (this.saved) {
             return;
         }

@@ -199,7 +199,7 @@
   "kohs_anchors.enemy.subtitle": "Anchors enemigos: los que colocaron otros jugadores",
   "kohs_anchors.enemy.badge": "ENEMIGOS",
   "kohs_anchors.option.enemy_about": "Anchors enemigos",
-  "kohs_anchors.option.enemy_about.description": "Un anchor es de un enemigo cuando aparece donde tú no colocaste ninguno. Los que ya estaban al llegar brillan como los tuyos.",
+  "kohs_anchors.option.enemy_about.description": "Un anchor es de un enemigo cuando aparece donde no tienes ninguna colocación en camino. Los que ya estaban al llegar brillan como los tuyos.",
   "kohs_anchors.option.glowstone_guard": "Guarda de glowstone",
   "kohs_anchors.option.glowstone_guard.description": "En una pelea de nexos la glowstone solo carga nexos: un clic que la pondría como bloque se descarta, como si no se hubiera pulsado. Impide el safe anchor, que pone la glowstone a propósito: pensado para spamear. Solo actúa hasta 4 s después de tu última acción con nexos.",
   "kohs_anchors.option.anchor_smoke": "Humo de explosión",
@@ -220,5 +220,12 @@
   "kohs_anchors.glowstone_warning.charging": "Cargando…",
   "kohs_anchors.glowstone_warning.activated": "Glowstone guard activado",
   "kohs_anchors.glowstone_warning.clip": "Safe anchor",
-  "kohs_anchors.glowstone_warning.no_video": "No se pudo reproducir el clip."
+  "kohs_anchors.glowstone_warning.no_video": "No se pudo reproducir el clip.",
+  "kohs_anchors.enemy.intro.title": "Anchors enemigos",
+  "kohs_anchors.enemy.intro.body": "Un anchor enemigo es el que aparece donde tú no colocaste ninguno: el de otro jugador. Esta página cambia cómo los ves, para distinguir en una pelea los suyos de los tuyos de un vistazo. Los tuyos, y los que ya estaban ahí, conservan tu estilo.",
+  "kohs_anchors.enemy.intro.yours": "Tuyo",
+  "kohs_anchors.enemy.intro.enemy": "Enemigo",
+  "kohs_anchors.enemy.intro.hide": "No volver a mostrar",
+  "kohs_anchors.enemy.intro.continue": "Continuar",
+  "kohs_anchors.enemy.preview.hint": "Arrastra: girar · Clic: cargar"
 }
