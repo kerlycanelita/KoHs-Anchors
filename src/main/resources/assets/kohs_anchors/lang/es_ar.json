@@ -91,7 +91,7 @@
   "kohs_anchors.option.glow_bloom": "Resplandor",
   "kohs_anchors.option.glow_bloom.description": "La luz suave alrededor de los píxeles encendidos, con su forma: cuatro luces de carga resplandecen como cuatro.",
   "kohs_anchors.option.glow_spill": "Luz sobre el entorno",
-  "kohs_anchors.option.glow_spill.description": "El suelo, las paredes y el techo cerca del nexo iluminados en su color, más débil con la distancia y el ángulo, solo donde el nexo los ve.",
+  "kohs_anchors.option.glow_spill.description": "El suelo, las paredes y el techo alrededor del nexo iluminados en su color. La luz se reparte por el aire como la del juego: dobla esquinas y baja por el pilar sobre el que está el nexo, más débil cuanto más lejos.",
   "kohs_anchors.option.glow_emissive": "Píxeles emisivos",
   "kohs_anchors.option.glow_emissive.description": "El portal, las vetas y las luces de carga brillan con toda su fuerza incluso a oscuras.",
   "kohs_anchors.option.glow_pulse": "Respiración",

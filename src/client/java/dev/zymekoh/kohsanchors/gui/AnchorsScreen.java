@@ -346,8 +346,8 @@ public final class AnchorsScreen extends Screen {
                 value -> value + "%", AnchorsConfig::changed, "GlowGeometry: light map 8×8 cells, Gaussian σ 1.15",
                 "reaches 2 cells past each edge, faded at the base");
         offset = slider(offset, "glow_spill", () -> glow.spill, value -> glow.spill = value, percent,
-                value -> value + "%", AnchorsConfig::changed, "SpillLight: faces within 3 blocks, Lambert × 1/(1+0.55d²)",
-                "line of sight sampled, rebuilt every 0.4 s");
+                value -> value + "%", AnchorsConfig::changed, "SpillLight: spread through the air, 26 neighbours, reach 4.6",
+                "faces lit from the air in front, smooth corners × (0.4 + 0.6 cos)", "rebuilt every 1 to 1.4 s or on a block change");
         offset = toggle(offset, "glow_emissive", () -> glow.emissive, value -> glow.emissive = value,
                 "GlowGeometry runs: lit pixels merged per row");
         offset = toggle(offset, "glow_pulse", () -> glow.pulse, value -> glow.pulse = value,

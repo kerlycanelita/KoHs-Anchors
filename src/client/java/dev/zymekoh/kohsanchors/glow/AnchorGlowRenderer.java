@@ -37,8 +37,9 @@ import org.joml.Vector3f;
  *   <li><b>Bloom.</b> Light spreads from those pixels across the face and past its edges, shaped by
  *   the pixels themselves ({@link GlowGeometry}).</li>
  *   <li><b>Bounce light.</b> The floor, the walls and the ceiling around the anchor are lit in the
- *   glow's colour, falling off with distance and with the angle each surface turns to the anchor,
- *   and only where the anchor can see them.</li>
+ *   glow's colour. The light spreads through the air as the game's own does, round corners and
+ *   down past the block the anchor stands on, fading with the way it travels and brighter on the
+ *   surfaces that turn towards the anchor ({@link SpillLight}).</li>
  * </ul>
  *
  * <p>The glow grows with the charge, breathes slowly, and fades out between 48 and 64 blocks.
@@ -152,8 +153,8 @@ public final class AnchorGlowRenderer {
             if (distance > MAX_DISTANCE) {
                 continue;
             }
-            // Near anchors light the blocks up to four blocks away, so their sphere is wider.
-            double radius = distance < spillDistance ? 4.0D : 1.6D;
+            // Near anchors light the blocks up to five blocks away, so their sphere is wider.
+            double radius = distance < spillDistance ? 5.0D : 1.6D;
             if (distance > radius) {
                 double cosine = (cx * forwardX + cy * forwardY + cz * forwardZ) / distance;
                 double angle = Math.acos(Math.max(-1.0D, Math.min(1.0D, cosine)));
@@ -435,7 +436,7 @@ public final class AnchorGlowRenderer {
 
         private void emitSpill(Matrix4f matrix, VertexConsumer consumer) {
             float[] vertices = this.spillLight.vertices;
-            float strength = this.intensity * this.spill * 1.25F;
+            float strength = this.intensity * this.spill * 0.72F;
             int color = this.spillColor;
             int r = (color >> 16) & 255;
             int g = (color >> 8) & 255;
@@ -529,16 +530,60 @@ public final class AnchorGlowRenderer {
     }
 
     /**
-     * The light an anchor throws on the surfaces around it: every exposed face of a full block
-     * within three blocks that turns towards the anchor and that the anchor can see, split in four
-     * so the falloff is smooth, with the light at each corner.
+     * The light an anchor throws on the surfaces around it, spread through the air the way the
+     * game's own light spreads: out of the anchor into every open cell around it, round corners and
+     * down past the edges of the block it stands on, fading with the distance it travels. Each face
+     * of a full block that touches lit air takes the light of the air in front of it, averaged at
+     * its corners as the game's smooth lighting does, and a little more when it turns towards the
+     * anchor.
+     *
+     * <p>Measured from the anchor's centre along straight lines, as before, the block an anchor
+     * stands on hid the ground all around it: on a pillar, a hard shadow lay under the anchor.
+     * Through the air, the pillar's sides and the ground at its foot are lit, two and three blocks
+     * down, and nothing is lit through a wall.</p>
      */
     private static final class SpillLight {
-        private static final int RADIUS = 3;
-        /** The light reaches zero at this distance, squared, so it has no edge. */
-        private static final float REACH_SQUARED = 13.0F;
-        private static final int PARTS = 3;
-        private static final int MAX_QUADS = 480;
+        /** Cells examined on each side of the anchor. */
+        static final int RADIUS = 5;
+        private static final int SIZE = RADIUS * 2 + 1;
+        private static final int CELLS = SIZE * SIZE * SIZE;
+        private static final int CENTER = (RADIUS * SIZE + RADIUS) * SIZE + RADIUS;
+        /** How far the light travels through the air, in blocks from the anchor's centre. */
+        private static final float REACH = 4.6F;
+        private static final int PARTS = 2;
+        private static final int MAX_FACES = 260;
+        private static final int MAX_QUADS = MAX_FACES * PARTS * PARTS;
+        /** The 26 neighbours of a cell: offsets, index steps and lengths. */
+        private static final int[][] STEPS = new int[26][];
+        private static final int[] STEP_INDEX = new int[26];
+        private static final float[] STEP_LENGTH = new float[26];
+        private static final Direction[] AROUND = Direction.values();
+
+        // Scratch space, reused by every build (the render thread builds one at a time).
+        private static final boolean[] OPEN = new boolean[CELLS];
+        private static final boolean[] RECEIVES = new boolean[CELLS];
+        private static final float[] DISTANCE = new float[CELLS];
+        private static final float[] LIGHT = new float[CELLS];
+        private static final int[] SETTLED = new int[CELLS];
+        private static final int[] HEAP = new int[CELLS * 27];
+        private static final float[] HEAP_KEY = new float[CELLS * 27];
+
+        static {
+            int step = 0;
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int dz = -1; dz <= 1; dz++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue;
+                        }
+                        STEPS[step] = new int[] {dx, dy, dz};
+                        STEP_INDEX[step] = (dy * SIZE + dz) * SIZE + dx;
+                        STEP_LENGTH[step] = (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+                        step++;
+                    }
+                }
+            }
+        }
 
         final long builtAt;
         final float[] vertices;
@@ -555,91 +600,286 @@ public final class AnchorGlowRenderer {
             this.planes = planes;
         }
 
+        private static int index(int x, int y, int z) {
+            return ((y + RADIUS) * SIZE + z + RADIUS) * SIZE + x + RADIUS;
+        }
+
+        private static boolean inside(int x, int y, int z) {
+            return x >= -RADIUS && x <= RADIUS && y >= -RADIUS && y <= RADIUS && z >= -RADIUS && z <= RADIUS;
+        }
+
         static SpillLight build(ClientLevel level, BlockPos anchor, long now) {
-            float[] vertices = new float[MAX_QUADS * 16];
-            byte[] faces = new byte[MAX_QUADS];
-            float[] planes = new float[MAX_QUADS];
-            int quads = 0;
             BlockPos.MutableBlockPos block = new BlockPos.MutableBlockPos();
-            BlockPos.MutableBlockPos beside = new BlockPos.MutableBlockPos();
-            outer:
-            for (int dy = -RADIUS; dy <= RADIUS; dy++) {
-                for (int dx = -RADIUS; dx <= RADIUS; dx++) {
-                    for (int dz = -RADIUS; dz <= RADIUS; dz++) {
-                        if (dx == 0 && dy == 0 && dz == 0) {
-                            continue;
-                        }
-                        block.set(anchor.getX() + dx, anchor.getY() + dy, anchor.getZ() + dz);
-                        BlockState receiver = level.getBlockState(block);
+            for (int y = -RADIUS; y <= RADIUS; y++) {
+                for (int z = -RADIUS; z <= RADIUS; z++) {
+                    for (int x = -RADIUS; x <= RADIUS; x++) {
+                        int cell = index(x, y, z);
+                        block.set(anchor.getX() + x, anchor.getY() + y, anchor.getZ() + z);
+                        BlockState state = level.getBlockState(block);
+                        boolean solid = state.isSolidRender();
+                        OPEN[cell] = !solid;
                         // Other anchors take no bounce light: added flat over their dark obsidian it
                         // reads as a lavender fog on the block, not as light; theirs is their own glow.
-                        if (!receiver.isSolidRender() || receiver.is(Blocks.RESPAWN_ANCHOR)) {
-                            continue;
-                        }
-                        for (Direction direction : DIRECTIONS) {
-                            beside.setWithOffset(block, direction);
-                            if (beside.equals(anchor) || level.getBlockState(beside).isSolidRender()) {
-                                continue;
-                            }
-                            // The face's centre, relative to the anchor's centre.
-                            float cx = dx + 0.5F * direction.getStepX();
-                            float cy = dy + 0.5F * direction.getStepY();
-                            float cz = dz + 0.5F * direction.getStepZ();
-                            if (cx * direction.getStepX() + cy * direction.getStepY() + cz * direction.getStepZ() >= 0.0F) {
-                                continue;
-                            }
-                            if (cx * cx + cy * cy + cz * cz > REACH_SQUARED || !visible(level, anchor, cx, cy, cz, block)) {
-                                continue;
-                            }
-                            float plane = switch (direction) {
-                                case UP -> dy + 1.0F;
-                                case DOWN -> dy;
-                                case SOUTH -> dz + 1.0F;
-                                case NORTH -> dz;
-                                case EAST -> dx + 1.0F;
-                                case WEST -> dx;
-                            };
-                            for (int part = 0; part < PARTS * PARTS && quads < MAX_QUADS; part++) {
-                                faces[quads] = (byte) direction.ordinal();
-                                planes[quads] = plane;
-                                addQuad(vertices, quads++, direction, dx, dy, dz, part);
-                            }
-                            if (quads >= MAX_QUADS) {
-                                break outer;
-                            }
-                        }
+                        RECEIVES[cell] = solid && !state.is(Blocks.RESPAWN_ANCHOR);
                     }
                 }
             }
-            return new SpillLight(now, vertices, quads, faces, planes);
-        }
+            OPEN[CENTER] = false;
+            int settled = spread();
 
-        /** Whether the straight line from the anchor to the face crosses no other full block. */
-        private static boolean visible(ClientLevel level, BlockPos anchor, float x, float y, float z, BlockPos target) {
-            BlockPos.MutableBlockPos probe = new BlockPos.MutableBlockPos();
-            int steps = 12;
-            for (int step = 2; step < steps; step++) {
-                float t = step / (float) steps;
-                probe.set(anchor.getX() + (int) Math.floor(0.5F + x * t), anchor.getY() + (int) Math.floor(0.5F + y * t),
-                        anchor.getZ() + (int) Math.floor(0.5F + z * t));
-                if (probe.equals(anchor) || probe.equals(target)) {
+            float[] vertices = new float[MAX_QUADS * 16];
+            byte[] faces = new byte[MAX_QUADS];
+            float[] planes = new float[MAX_QUADS];
+            float[] corners = new float[4];
+            int quads = 0;
+            int found = 0;
+            // Nearest air first, so the face limit, if it is ever reached, drops the farthest light.
+            outer:
+            for (int order = 0; order < settled; order++) {
+                int front = SETTLED[order];
+                if (LIGHT[front] <= 0.002F) {
                     continue;
                 }
-                if (level.getBlockState(probe).isSolidRender()) {
-                    return false;
+                int fx = front % SIZE - RADIUS;
+                int fz = front / SIZE % SIZE - RADIUS;
+                int fy = front / (SIZE * SIZE) - RADIUS;
+                for (Direction toward : AROUND) {
+                    int bx = fx + toward.getStepX();
+                    int by = fy + toward.getStepY();
+                    int bz = fz + toward.getStepZ();
+                    if (!inside(bx, by, bz) || !RECEIVES[index(bx, by, bz)]) {
+                        continue;
+                    }
+                    // The lit face is the side of that block turned back to this air.
+                    Direction direction = toward.getOpposite();
+                    cornerLight(direction, fx, fy, fz, bx, by, bz, corners);
+                    if (corners[0] + corners[1] + corners[2] + corners[3] < 0.008F) {
+                        continue;
+                    }
+                    float plane = switch (direction) {
+                        case UP -> by + 1.0F;
+                        case DOWN -> by;
+                        case SOUTH -> bz + 1.0F;
+                        case NORTH -> bz;
+                        case EAST -> bx + 1.0F;
+                        case WEST -> bx;
+                    };
+                    for (int part = 0; part < PARTS * PARTS; part++) {
+                        faces[quads] = (byte) direction.ordinal();
+                        planes[quads] = plane;
+                        addQuad(vertices, quads++, direction, bx, by, bz, part, corners);
+                    }
+                    if (++found >= MAX_FACES) {
+                        break outer;
+                    }
                 }
             }
-            return true;
+            return new SpillLight(now, java.util.Arrays.copyOf(vertices, quads * 16), quads,
+                    java.util.Arrays.copyOf(faces, quads), java.util.Arrays.copyOf(planes, quads));
         }
 
-        /** One of the {@link #PARTS} by {@link #PARTS} pieces of a face, in coordinates of the anchor block. */
-        private static void addQuad(float[] vertices, int index, Direction direction, int dx, int dy, int dz, int part) {
+        /**
+         * Spreads the light out of the anchor through the open cells, nearest first (Dijkstra over
+         * the 26 neighbours, each step as long as it really is), and fills {@link #LIGHT}. A step
+         * across an edge or a corner needs open air beside it, so light never slips through a
+         * crack between two blocks that only touch at an edge. Returns how many cells it reached,
+         * listed in {@link #SETTLED} in the order they were reached.
+         */
+        private static int spread() {
+            java.util.Arrays.fill(DISTANCE, Float.MAX_VALUE);
+            java.util.Arrays.fill(LIGHT, 0.0F);
+            DISTANCE[CENTER] = 0.0F;
+            int heapSize = 0;
+            HEAP[heapSize] = CENTER;
+            HEAP_KEY[heapSize++] = 0.0F;
+            int settled = 0;
+            while (heapSize > 0) {
+                int cell = HEAP[0];
+                float key = HEAP_KEY[0];
+                heapSize = pop(heapSize);
+                if (key > DISTANCE[cell]) {
+                    continue;
+                }
+                if (cell != CENTER) {
+                    SETTLED[settled++] = cell;
+                    LIGHT[cell] = lightAt(key);
+                }
+                int x = cell % SIZE - RADIUS;
+                int z = cell / SIZE % SIZE - RADIUS;
+                int y = cell / (SIZE * SIZE) - RADIUS;
+                for (int step = 0; step < 26; step++) {
+                    int[] offset = STEPS[step];
+                    int nx = x + offset[0];
+                    int ny = y + offset[1];
+                    int nz = z + offset[2];
+                    if (!inside(nx, ny, nz)) {
+                        continue;
+                    }
+                    int next = cell + STEP_INDEX[step];
+                    float distance = key + STEP_LENGTH[step];
+                    if (!OPEN[next] || distance >= REACH || distance >= DISTANCE[next] || !passes(x, y, z, offset)) {
+                        continue;
+                    }
+                    DISTANCE[next] = distance;
+                    heapSize = push(heapSize, next, distance);
+                }
+            }
+            return settled;
+        }
+
+        /** Whether light can take a step from a cell: straight always; across an edge or a corner, beside open air. */
+        private static boolean passes(int x, int y, int z, int[] offset) {
+            int axes = (offset[0] != 0 ? 1 : 0) + (offset[1] != 0 ? 1 : 0) + (offset[2] != 0 ? 1 : 0);
+            if (axes == 1) {
+                return true;
+            }
+            boolean single = offset[0] != 0 && OPEN[index(x + offset[0], y, z)]
+                    || offset[1] != 0 && OPEN[index(x, y + offset[1], z)]
+                    || offset[2] != 0 && OPEN[index(x, y, z + offset[2])];
+            if (axes == 2 || !single) {
+                return single;
+            }
+            return OPEN[index(x + offset[0], y + offset[1], z)] || OPEN[index(x + offset[0], y, z + offset[2])]
+                    || OPEN[index(x, y + offset[1], z + offset[2])];
+        }
+
+        /** The light of air this far from the anchor's centre: gentle, and nothing at the reach, with no edge. */
+        private static float lightAt(float distance) {
+            float reach = distance / REACH;
+            float window = Math.max(0.0F, 1.0F - reach * reach);
+            float travelled = Math.max(0.0F, distance - 0.5F);
+            return window * window / (1.0F + 0.24F * travelled * travelled);
+        }
+
+        private static int push(int size, int cell, float key) {
+            int at = size++;
+            while (at > 0) {
+                int parent = (at - 1) >> 1;
+                if (HEAP_KEY[parent] <= key) {
+                    break;
+                }
+                HEAP[at] = HEAP[parent];
+                HEAP_KEY[at] = HEAP_KEY[parent];
+                at = parent;
+            }
+            HEAP[at] = cell;
+            HEAP_KEY[at] = key;
+            return size;
+        }
+
+        private static int pop(int size) {
+            size--;
+            int cell = HEAP[size];
+            float key = HEAP_KEY[size];
+            int at = 0;
+            while (true) {
+                int child = at * 2 + 1;
+                if (child >= size) {
+                    break;
+                }
+                if (child + 1 < size && HEAP_KEY[child + 1] < HEAP_KEY[child]) {
+                    child++;
+                }
+                if (HEAP_KEY[child] >= key) {
+                    break;
+                }
+                HEAP[at] = HEAP[child];
+                HEAP_KEY[at] = HEAP_KEY[child];
+                at = child;
+            }
+            HEAP[at] = cell;
+            HEAP_KEY[at] = key;
+            return size;
+        }
+
+        /**
+         * The light at the four corners of the face of block {@code b} that looks into the air cell
+         * {@code f}: at each corner the average of the open cells around it on the lit side, as
+         * smooth lighting does, times how much the corner turns towards the anchor. Corners in the
+         * order of {@link #facePoint}: (0,0), (1,0), (0,1), (1,1).
+         */
+        private static void cornerLight(Direction direction, int fx, int fy, int fz, int bx, int by, int bz,
+                float[] corners) {
+            // The face's two axes, the same ones facePoint maps u and v to.
+            int ux = 0;
+            int uy = 0;
+            int uz = 0;
+            int vx = 0;
+            int vy = 0;
+            int vz = 0;
+            switch (direction.getAxis()) {
+                case Y -> {
+                    ux = 1;
+                    vz = 1;
+                }
+                case Z -> {
+                    ux = 1;
+                    vy = 1;
+                }
+                default -> {
+                    uz = 1;
+                    vy = 1;
+                }
+            }
+            int front = index(fx, fy, fz);
+            for (int corner = 0; corner < 4; corner++) {
+                int su = (corner & 1) == 0 ? -1 : 1;
+                int sv = (corner & 2) == 0 ? -1 : 1;
+                float sum = LIGHT[front];
+                int count = 1;
+                boolean alongU = open(fx + su * ux, fy + su * uy, fz + su * uz);
+                boolean alongV = open(fx + sv * vx, fy + sv * vy, fz + sv * vz);
+                if (alongU) {
+                    sum += LIGHT[index(fx + su * ux, fy + su * uy, fz + su * uz)];
+                    count++;
+                }
+                if (alongV) {
+                    sum += LIGHT[index(fx + sv * vx, fy + sv * vy, fz + sv * vz)];
+                    count++;
+                }
+                int dx = fx + su * ux + sv * vx;
+                int dy = fy + su * uy + sv * vy;
+                int dz = fz + su * uz + sv * vz;
+                if ((alongU || alongV) && open(dx, dy, dz)) {
+                    sum += LIGHT[index(dx, dy, dz)];
+                    count++;
+                }
+                // The corner itself, relative to the anchor's centre, and how it faces the anchor.
+                float[] point = facePoint(direction, (corner & 1) == 0 ? 0.0F : 1.0F, (corner & 2) == 0 ? 0.0F : 1.0F);
+                float px = bx + point[0] - 0.5F;
+                float py = by + point[1] - 0.5F;
+                float pz = bz + point[2] - 0.5F;
+                float length = (float) Math.sqrt(px * px + py * py + pz * pz);
+                float cosine = -(px * direction.getStepX() + py * direction.getStepY() + pz * direction.getStepZ())
+                        / Math.max(1.0E-3F, length);
+                corners[corner] = sum / count * (0.4F + 0.6F * Math.max(0.0F, cosine));
+            }
+        }
+
+        private static boolean open(int x, int y, int z) {
+            return inside(x, y, z) && OPEN[index(x, y, z)];
+        }
+
+        /**
+         * One of the {@link #PARTS} by {@link #PARTS} pieces of a face, in coordinates of the anchor
+         * block, lit between its four corners.
+         */
+        private static void addQuad(float[] vertices, int index, Direction direction, int dx, int dy, int dz, int part,
+                float[] light) {
             float size = 1.0F / PARTS;
             float u0 = (part % PARTS) * size;
             float v0 = (part / PARTS) * size;
-            float[][] corners = {
-                    facePoint(direction, u0, v0), facePoint(direction, u0 + size, v0),
-                    facePoint(direction, u0 + size, v0 + size), facePoint(direction, u0, v0 + size)};
+            float[] us = {u0, u0 + size, u0 + size, u0};
+            float[] vs = {v0, v0, v0 + size, v0 + size};
+            float[][] corners = new float[4][];
+            float[] values = new float[4];
+            for (int corner = 0; corner < 4; corner++) {
+                corners[corner] = facePoint(direction, us[corner], vs[corner]);
+                // Bilinear between the face's corner lights.
+                float top = light[0] + (light[1] - light[0]) * us[corner];
+                float bottom = light[2] + (light[3] - light[2]) * us[corner];
+                values[corner] = top + (bottom - top) * vs[corner];
+            }
             // Counter-clockwise seen from the side the face turns to, or the material culls it.
             float ax = corners[1][0] - corners[0][0];
             float ay = corners[1][1] - corners[0][1];
@@ -653,27 +893,16 @@ public final class AnchorGlowRenderer {
                 float[] swap = corners[1];
                 corners[1] = corners[3];
                 corners[3] = swap;
+                float value = values[1];
+                values[1] = values[3];
+                values[3] = value;
             }
             int offset = index * 16;
             for (int corner = 0; corner < 4; corner++) {
-                float x = dx + corners[corner][0] + direction.getStepX() * SPILL_OFFSET;
-                float y = dy + corners[corner][1] + direction.getStepY() * SPILL_OFFSET;
-                float z = dz + corners[corner][2] + direction.getStepZ() * SPILL_OFFSET;
-                // Light from the anchor's centre: Lambert's cosine, a soft inverse square, and a
-                // window that takes it smoothly to nothing at the edge of its reach.
-                float lx = 0.5F - x;
-                float ly = 0.5F - y;
-                float lz = 0.5F - z;
-                float distanceSquared = lx * lx + ly * ly + lz * lz;
-                float length = (float) Math.sqrt(distanceSquared);
-                float cosine = (lx * direction.getStepX() + ly * direction.getStepY() + lz * direction.getStepZ())
-                        / Math.max(1.0E-3F, length);
-                float window = Math.max(0.0F, 1.0F - distanceSquared / REACH_SQUARED);
-                float light = Math.max(0.0F, cosine) * window * window / (1.0F + 0.35F * distanceSquared);
-                vertices[offset + corner * 4] = x;
-                vertices[offset + corner * 4 + 1] = y;
-                vertices[offset + corner * 4 + 2] = z;
-                vertices[offset + corner * 4 + 3] = light;
+                vertices[offset + corner * 4] = dx + corners[corner][0] + direction.getStepX() * SPILL_OFFSET;
+                vertices[offset + corner * 4 + 1] = dy + corners[corner][1] + direction.getStepY() * SPILL_OFFSET;
+                vertices[offset + corner * 4 + 2] = dz + corners[corner][2] + direction.getStepZ() * SPILL_OFFSET;
+                vertices[offset + corner * 4 + 3] = values[corner];
             }
         }
 
