@@ -24,7 +24,7 @@ abstract class MinecraftMixin {
     /** After the tick-end packet: the server's view of this tick is closed. */
     @Inject(method = "tick", at = @At("TAIL"))
     private void kohsAnchors$endTick(CallbackInfo callback) {
-        AnchorInput.endTick();
+        AnchorInput.endTick((Minecraft) (Object) this);
     }
 
     @Inject(method = "handleKeybinds", at = @At("HEAD"))

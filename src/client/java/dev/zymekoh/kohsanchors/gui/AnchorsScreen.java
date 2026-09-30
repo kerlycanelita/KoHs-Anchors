@@ -33,12 +33,12 @@ import net.minecraft.util.Mth;
 
 /**
  * The KoHs Anchor's settings, in the Zymekoh style: black-purple glass over a transparent veil,
- * an anchor sigil turning slowly behind it, five tabs, and the 3D anchor inside its ritual circle
+ * an anchor sigil turning slowly behind it, six tabs, and the 3D anchor inside its ritual circle
  * with this session's numbers.
  *
  * <ul>
- *   <li><b>General</b>: the anchor and glowstone debounce, the detonation, what is always on, and
- *   Herzium.</li>
+ *   <li><b>General</b>: the anchor and glowstone debounce, the detonation, and what is always
+ *   on.</li>
  *   <li><b>Anchor</b>: the workshop, where the anchor's two layers are coloured or painted pixel by
  *   pixel ({@link AnchorWorkshop}).</li>
  *   <li><b>Glow</b>: the light a charged anchor gives off, and the enemy anchors' colour on a page
@@ -46,6 +46,8 @@ import net.minecraft.util.Mth;
  *   <li><b>Sounds</b>: the charge and explosion sounds.</li>
  *   <li><b>Advanced</b>: the not secure options, crimson, each behind two warnings, and developer
  *   mode, behind a blue one.</li>
+ *   <li><b>Herzium</b>: Herzium's hotbar order and how the two mods talk ({@link HerziumWindow}
+ *   explains both). Without Herzium the tab is dimmed and opens a window with where to get it.</li>
  * </ul>
  *
  * <p>Geometry comes from {@link AnchorsLayout}. Every animation is timed in real time and moves
@@ -70,7 +72,8 @@ public final class AnchorsScreen extends Screen {
     static final int GLOW = 2;
     static final int SOUNDS = 3;
     static final int ADVANCED = 4;
-    private static final String[] TAB_KEYS = {"general", "anchor", "glow", "sounds", "advanced"};
+    static final int HERZIUM = 5;
+    private static final String[] TAB_KEYS = {"general", "anchor", "glow", "sounds", "advanced", "herzium"};
 
     /** Debounce stops: Vanilla, then one millisecond to ten seconds, finer at the short end. */
     static final int[] DEBOUNCE_STOPS = {0, 1, 2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50, 60, 75, 80, 100, 120, 150, 175,
@@ -118,6 +121,7 @@ public final class AnchorsScreen extends Screen {
     private AnchorWorkshop workshop;
     private AnchorsWarning warning;
     private GlowstoneGuardWarning guardWarning;
+    private HerziumWindow herziumWindow;
     private EnemyIntro enemyIntro;
     private EnemySwitch enemySwitch;
     /** The enemy's anchor, as the world draws it: on the enemy page and in the switch. */
@@ -221,6 +225,7 @@ public final class AnchorsScreen extends Screen {
             case GENERAL -> offset = buildGeneral(offset);
             case GLOW -> offset = enemyPage ? buildEnemy(offset) : buildGlow(offset);
             case SOUNDS -> offset = buildSounds(offset);
+            case HERZIUM -> offset = buildHerzium(offset);
             default -> offset = buildAdvanced(offset);
         }
         this.statsOffset = -1;
@@ -297,19 +302,6 @@ public final class AnchorsScreen extends Screen {
         offset = note(offset, "core", () -> Component.translatable("kohs_anchors.core.badge").getString(),
                 AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, hold, mergesRepeat",
                 "DetonationPredictor.showAtInput / onAnchorUsed", "Settings fields transient: not saved");
-        offset = section(offset, "kohs_anchors.section.integrations");
-        if (HerziumBridge.installed() && HerziumBridge.orderAvailable()) {
-            String version = HerziumBridge.version();
-            offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(),
-                    Component.translatable("kohs_anchors.option.herzium", version),
-                    description(HerziumBridge.agrees() ? "herzium" : "herzium_old"), this.font,
-                    () -> orderLabel(HerziumBridge.hotbarOrder()), HerziumBridge::cycleHotbarOrder, "herzium",
-                    "HerziumBridge (reflection)", HerziumBridge.reflectionTarget(),
-                    "agrees from " + HerziumBridge.AGREEING_VERSION + ": " + HerziumBridge.agrees()));
-        } else {
-            offset = note(offset, "herzium_missing", () -> Component.translatable("kohs_anchors.herzium.absent").getString(),
-                    AnchorsTheme.TEXT_DIM, "FabricLoader.isModLoaded(\"herzium\") = false");
-        }
         offset = section(offset, "kohs_anchors.section.interface");
         offset = toggle(offset, "interface_motion", () -> settings.interfaceMotion, value -> settings.interfaceMotion = value,
                 "AnchorsScreen motion: sigil, motes, slashes, entrances");
@@ -415,6 +407,52 @@ public final class AnchorsScreen extends Screen {
         return offset;
     }
 
+    /**
+     * Herzium's order, which is Herzium's own (read from it, changed through it), the recommended
+     * order when another is in use, and how the two mods talk. Only reached with Herzium installed.
+     */
+    private int buildHerzium(int offset) {
+        AnchorsConfig.Settings settings = settings();
+        offset = section(offset, "kohs_anchors.section.herzium_order");
+        String version = HerziumBridge.version();
+        boolean changeable = HerziumBridge.orderAvailable();
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(),
+                Component.translatable("kohs_anchors.option.herzium", version),
+                description(HerziumBridge.agrees() ? "herzium" : "herzium_old"), this.font,
+                () -> orderLabel(HerziumBridge.hotbarOrder()), () -> {
+                    HerziumBridge.cycleHotbarOrder();
+                    rebuildWidgets();
+                }, "herzium", "HerziumBridge (reflection)", HerziumBridge.reflectionTarget(),
+                "agrees from " + HerziumBridge.AGREEING_VERSION + ": " + HerziumBridge.agrees(),
+                changeable ? "changed through Herzium, which saves it" : "read from " + HerziumBridge.configFile().getFileName()
+                        + " only"));
+        if (!HerziumBridge.RECOMMENDED.equals(HerziumBridge.hotbarOrder()) && changeable) {
+            offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("herzium_recommend"),
+                    description("herzium_recommend"), this.font,
+                    () -> Component.translatable("kohs_anchors.herzium.use").getString(), () -> {
+                        HerziumBridge.selectHotbarOrder(HerziumBridge.RECOMMENDED);
+                        rebuildWidgets();
+                    }, true, false, "herzium_recommend", "HerziumBridge.selectHotbarOrder(HERZIUM)",
+                    "cycleHotbarOrder() until it is reached: Herzium saves it"));
+        } else {
+            offset = note(offset, "herzium_recommend", () -> Component.translatable("kohs_anchors.herzium.window.in_use")
+                    .getString().toUpperCase(Locale.ROOT), AnchorsTheme.ACCENT_BRIGHT, "HotbarOrder.HERZIUM in use");
+        }
+        offset = note(offset, "herzium_source", () -> HerziumBridge.configFile().getFileName().toString(),
+                AnchorsTheme.TEXT_MUTED, "HerziumConfig.get().hotbarOrder(), else " + HerziumBridge.configFile(),
+                "never written by KoHs Anchor's");
+        offset = section(offset, "kohs_anchors.section.herzium_link");
+        offset = toggle(offset, "herzium_sync", () -> settings.herziumSync, value -> settings.herziumSync = value,
+                "AnchorInput.replay → HotbarOrderController.hotbarClickConsumed(slot, remaining)",
+                "AnchorInput.endTick → ImmediateHotbarInput.visualSelectedSlot / clearPreview",
+                "never noteCallSiteSelection · " + HerziumBridge.talkStats());
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("herzium_guide"),
+                description("herzium_guide"), this.font, () -> Component.translatable("kohs_anchors.button.open").getString(),
+                () -> this.herziumWindow = new HerziumWindow(HerziumWindow.Kind.GUIDE, settings.interfaceMotion, this),
+                false, false, "herzium_guide", "HerziumWindow(GUIDE)", "Settings.herziumIntro = " + settings.herziumIntro));
+        return offset;
+    }
+
     private int buildAdvanced(int offset) {
         AnchorsConfig.Settings settings = settings();
         this.bannerOffset = offset;
@@ -505,11 +543,12 @@ public final class AnchorsScreen extends Screen {
         return Component.translatable((dev() ? "kohs_anchors.dev." : "kohs_anchors.option.") + option + ".description");
     }
 
+    /** Herzium's order, shortly: the row's value has little room beside its name. */
     private static String orderLabel(String order) {
         String key = switch (order) {
-            case "HERZIUM" -> "kohs_anchors.herzium.order.herzium";
-            case "VANILLA" -> "kohs_anchors.herzium.order.vanilla";
-            case "VANILLA_REVERSED" -> "kohs_anchors.herzium.order.reversed";
+            case "HERZIUM" -> "kohs_anchors.herzium.order.herzium.short";
+            case "VANILLA" -> "kohs_anchors.herzium.order.vanilla.short";
+            case "VANILLA_REVERSED" -> "kohs_anchors.herzium.order.reversed.short";
             default -> "";
         };
         return key.isEmpty() ? order : Component.translatable(key).getString();
@@ -601,6 +640,14 @@ public final class AnchorsScreen extends Screen {
     }
 
     private void selectTab(int index) {
+        if (index == HERZIUM && !HerziumBridge.installed()) {
+            // Without Herzium its tab has nothing to change: it says where to get it instead.
+            this.herziumWindow = new HerziumWindow(HerziumWindow.Kind.MISSING, settings().interfaceMotion, this);
+            return;
+        }
+        if (index == HERZIUM && index != this.tab && settings().herziumIntro) {
+            this.herziumWindow = new HerziumWindow(HerziumWindow.Kind.GUIDE, settings().interfaceMotion, this);
+        }
         if (index >= 0 && index < AnchorsLayout.TAB_COUNT && index != GLOW && enemyPage) {
             // The enemy's anchors only have a glow: any other tab is the player's own again.
             enemyPage = false;
@@ -870,6 +917,21 @@ public final class AnchorsScreen extends Screen {
                 this.enemyIntro = null;
             }
         }
+        if (this.herziumWindow != null) {
+            this.herziumWindow.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
+            if (this.herziumWindow.done()) {
+                if (this.herziumWindow.hideFromNowOn()) {
+                    settings().herziumIntro = false;
+                    AnchorsConfig.save();
+                }
+                boolean guide = this.herziumWindow.kind() == HerziumWindow.Kind.GUIDE;
+                this.herziumWindow = null;
+                if (guide && this.tab == HERZIUM) {
+                    // The order may have changed in the window: the rows follow it.
+                    rebuildWidgets();
+                }
+            }
+        }
         if (this.devWarning == null) {
             DevInspector.render(graphics, this.font, this.width, this.height, mouseX, mouseY,
                     "AnchorsScreen › " + TAB_KEYS[this.tab] + (this.tab == GLOW && enemyPage ? " › enemy" : ""),
@@ -1054,6 +1116,7 @@ public final class AnchorsScreen extends Screen {
         float response = 1.0F - (float) Math.exp(-frameMillis / 70.0F);
         boolean advancedOn = ServerLock.anyAdvancedOn();
         boolean suspended = ServerLock.suspendedHere();
+        boolean herziumMissing = !HerziumBridge.installed();
         for (int index = 0; index < AnchorsLayout.TAB_COUNT; index++) {
             AnchorsLayout.Rect rect = this.layout.tab(index);
             boolean selected = index == this.tab;
@@ -1061,6 +1124,10 @@ public final class AnchorsScreen extends Screen {
             boolean hovered = rect.contains(mouseX, mouseY);
             this.tabHover[index] += ((hovered ? 1.0F : 0.0F) - this.tabHover[index]) * response;
             float hover = this.tabHover[index];
+            if (index == HERZIUM && herziumMissing) {
+                drawMissingTab(graphics, rect, hover, intro, seconds, motion);
+                continue;
+            }
 
             int accent = danger ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT;
             int top = selected ? (danger ? 0xE0521028 : 0xE03A1668) : AnchorsTheme.lerp(0x801D0D32, 0xB02A1248, hover);
@@ -1109,7 +1176,44 @@ public final class AnchorsScreen extends Screen {
         }
     }
 
-    /** Small icons drawn from pixels: sliders, the anchor, a flare, a wave, and the warning sign. */
+    /**
+     * The Herzium tab without Herzium: dimmed glass, a grey label and a small green arrow (get it
+     * on Modrinth). Hovering lifts it a little, since a click still opens the window.
+     */
+    private void drawMissingTab(GuiGraphicsExtractor graphics, AnchorsLayout.Rect rect, float hover, float intro,
+            double seconds, boolean motion) {
+        float dim = intro * (0.5F + 0.3F * hover);
+        AnchorsUi.panel(graphics, rect.x(), rect.y(), rect.width(), rect.height(), AnchorsTheme.fade(0x70140A20, dim),
+                AnchorsTheme.fade(0x600B0514, dim));
+        AnchorsUi.roundedOutline(graphics, rect.x(), rect.y(), rect.width(), rect.height(),
+                AnchorsTheme.fade(AnchorsTheme.lerp(0x80463A56, 0xC08E8AA0, hover), intro));
+        String label = this.tabLabels[HERZIUM];
+        if (this.font.width(label) + 18 > rect.width()) {
+            label = this.tabShortLabels[HERZIUM];
+        }
+        boolean iconOnly = this.font.width(label) + 18 > rect.width();
+        int iconSize = 9;
+        int contentWidth = iconSize + (iconOnly ? 0 : 4 + this.font.width(label));
+        int startX = rect.x() + (rect.width() - contentWidth) / 2;
+        int iconY = rect.y() + (rect.height() - iconSize) / 2;
+        drawTabIcon(graphics, HERZIUM, startX, iconY, iconSize, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro));
+        if (!iconOnly) {
+            AnchorsUi.label(graphics, this.font, label, startX + iconSize + 4, rect.y() + (rect.height() - 8) / 2,
+                    AnchorsTheme.fade(AnchorsTheme.lerp(0xFF6E6880, AnchorsTheme.TEXT_MUTED, hover), intro), false);
+        }
+        // A download arrow in Modrinth's green, breathing slowly.
+        float breathe = motion ? 0.55F + 0.45F * AnchorsTheme.pulse(seconds, 2.2D) : 1.0F;
+        int arrow = AnchorsTheme.withAlpha(0x1BD96A, Math.round(255 * intro * (0.5F + 0.5F * Math.max(hover, breathe))));
+        int ax = rect.right() - 6;
+        int ay = rect.y() + 2;
+        graphics.fill(ax, ay, ax + 1, ay + 3, arrow);
+        graphics.fill(ax - 1, ay + 2, ax + 2, ay + 3, arrow);
+        graphics.fill(ax - 2, ay + 4, ax + 3, ay + 5, arrow);
+        DevInspector.node("Tab", "herzium (not installed)", rect.x(), rect.y(), rect.width(), rect.height(),
+                "FabricLoader.isModLoaded(\"herzium\") = false", "click: HerziumWindow(MISSING)");
+    }
+
+    /** Small icons drawn from pixels: sliders, the anchor, a flare, a wave, the warning sign, Herzium's H. */
     private static void drawTabIcon(GuiGraphicsExtractor graphics, int index, int x, int y, int size, int color) {
         int center = size / 2;
         switch (index) {
@@ -1145,6 +1249,15 @@ public final class AnchorsScreen extends Screen {
                     int barX = x + bar * 2;
                     graphics.fill(barX, y + size - heights[bar], barX + 1, y + size, color);
                 }
+            }
+            case HERZIUM -> {
+                // Speed lines running into an H, as on Herzium's own icon.
+                graphics.fill(x, y + 2, x + 3, y + 3, AnchorsTheme.fade(color, 0.55F));
+                graphics.fill(x + 1, y + 4, x + 3, y + 5, AnchorsTheme.fade(color, 0.8F));
+                graphics.fill(x, y + 6, x + 3, y + 7, AnchorsTheme.fade(color, 0.55F));
+                graphics.fill(x + 4, y, x + 5, y + size, color);
+                graphics.fill(x + size - 1, y, x + size, y + size, color);
+                graphics.fill(x + 4, y + center, x + size, y + center + 1, color);
             }
             default -> AnchorsUi.warningGlyph(graphics, x + center, y, size, color, 0xFF1A0308);
         }
@@ -1354,6 +1467,11 @@ public final class AnchorsScreen extends Screen {
                 values = numbers(AnchorStats.chainedClicks(), AnchorStats.instantDetonations(), AnchorStats.mergedClicks(),
                         AnchorStats.droppedClicks(), AnchorStats.keptDetonations());
             }
+            case HERZIUM -> {
+                keys = new String[] {"ordered", "next_tick", "reported", "previews", "merged"};
+                values = numbers(AnchorStats.orderedBursts(), AnchorStats.nextTickPresses(), HerziumBridge.reportedPresses(),
+                        HerziumBridge.droppedPreviews(), AnchorStats.mergedClicks());
+            }
             default -> {
                 keys = new String[] {"cycle", "ordered", "held", "merged", "debounced"};
                 values = numbers(0, AnchorStats.orderedBursts(), AnchorStats.heldClicks(), AnchorStats.mergedClicks(),
@@ -1365,7 +1483,7 @@ public final class AnchorsScreen extends Screen {
         for (int index = 0; index < values.length; index++) {
             String value = values[index];
             int valueWidth = this.font.width(value);
-            String name = AnchorsUi.fit(this.font, Component.translatable("kohs_anchors.stats." + keys[index]).getString(),
+            String name = AnchorsUi.ellipsis(this.font, Component.translatable("kohs_anchors.stats." + keys[index]).getString(),
                     width - valueWidth - 6);
             AnchorsUi.label(graphics, this.font, name, x, lineY, AnchorsTheme.fade(AnchorsTheme.TEXT_MUTED, alpha), false);
             AnchorsUi.label(graphics, this.font, value, x + width - valueWidth, lineY,
@@ -1422,6 +1540,9 @@ public final class AnchorsScreen extends Screen {
         int button = event.button();
         if (this.guardWarning != null) {
             return this.guardWarning.mouseClicked(this.font, this.width, this.height, mouseX, mouseY, button);
+        }
+        if (this.herziumWindow != null) {
+            return this.herziumWindow.mouseClicked(this.font, this.width, this.height, mouseX, mouseY, button);
         }
         if (this.enemyIntro != null) {
             return this.enemyIntro.mouseClicked(this.width, this.height, mouseX, mouseY, button);
@@ -1498,7 +1619,8 @@ public final class AnchorsScreen extends Screen {
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
         if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
-                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null) {
+                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null
+                || this.herziumWindow != null) {
             return true;
         }
         if (this.figureDragging) {
@@ -1533,7 +1655,7 @@ public final class AnchorsScreen extends Screen {
             return this.warning.mouseReleased();
         }
         if (this.devWarning != null || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
-                || this.enemyIntro != null || this.enemySwitch != null) {
+                || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
         }
         if (this.figureDragging) {
@@ -1571,7 +1693,8 @@ public final class AnchorsScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
         if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.popover != null
-                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null) {
+                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null
+                || this.herziumWindow != null) {
             return true;
         }
         if (this.soundPicker != null) {
@@ -1595,6 +1718,9 @@ public final class AnchorsScreen extends Screen {
         int key = event.key();
         if (this.guardWarning != null) {
             return this.guardWarning.keyPressed(key);
+        }
+        if (this.herziumWindow != null) {
+            return this.herziumWindow.keyPressed(key);
         }
         if (this.enemyIntro != null) {
             return this.enemyIntro.keyPressed(key);
@@ -1721,6 +1847,11 @@ public final class AnchorsScreen extends Screen {
                 settings.chargeSound = defaults.chargeSound;
                 settings.explosionSound = defaults.explosionSound;
             }
+            case HERZIUM -> {
+                // Herzium's order is Herzium's: only this mod's side goes back to its defaults.
+                settings.herziumSync = defaults.herziumSync;
+                settings.herziumIntro = defaults.herziumIntro;
+            }
             default -> {
                 settings.fastChain = false;
                 settings.instantDetonation = false;
@@ -1756,7 +1887,8 @@ public final class AnchorsScreen extends Screen {
     /** Whether a warning, picker or popover owns the pointer and the keyboard. */
     private boolean modalOpen() {
         return this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
-                || this.popover != null || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null;
+                || this.popover != null || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null
+                || this.herziumWindow != null;
     }
 
     private void saveSettings() {

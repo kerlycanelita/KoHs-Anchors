@@ -6,6 +6,7 @@ import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
 import dev.zymekoh.kohsanchors.glow.AnchorTracker;
 import dev.zymekoh.kohsanchors.integration.CrystalPalette;
+import dev.zymekoh.kohsanchors.integration.HerziumBridge;
 import dev.zymekoh.kohsanchors.mixin.KeyMappingAccessor;
 import dev.zymekoh.kohsanchors.mixin.MinecraftUseInvoker;
 import dev.zymekoh.kohsanchors.predict.AnchorVeil;
@@ -109,6 +110,12 @@ public final class AnchorInput {
     private static int tickSlot = -1;
     /** Presses of this pass that wait for the next tick: Vanilla's loops leave them queued. */
     private static boolean deferring;
+    /**
+     * When a burst goes on next tick: the slot its next stretch selects first, -1 for the slot
+     * held now, {@link #NO_BURST} when no burst waits. Told to Herzium at the end of the tick.
+     */
+    private static final int NO_BURST = -2;
+    private static int burstNextSlot = NO_BURST;
 
     /** What happens to one use press. */
     private enum Decision { RUN, RUN_PREDICTED, HOLD, DROP }
@@ -214,9 +221,19 @@ public final class AnchorInput {
         }
     }
 
-    /** End of the client tick, after its tick-end packet: the next tick may change slot again. */
-    public static void endTick() {
+    /**
+     * End of the client tick, after its tick-end packet: the next tick may change slot again. A
+     * burst that goes on next tick is told to Herzium, whose hotbar preview is final by now.
+     */
+    public static void endTick(Minecraft minecraft) {
         tickSlot = -1;
+        if (burstNextSlot != NO_BURST) {
+            if (minecraft.player != null) {
+                Inventory inventory = minecraft.player.getInventory();
+                HerziumBridge.burstContinues(inventory, inventory.getSelectedSlot(), burstNextSlot);
+            }
+            burstNextSlot = NO_BURST;
+        }
     }
 
     /**
@@ -417,6 +434,7 @@ public final class AnchorInput {
                 if (slots[action].consumeClick()) {
                     // Exactly what Vanilla does for a number key outside spectator and creative saving.
                     minecraft.player.getInventory().setSelectedSlot(action);
+                    HerziumBridge.pressConsumed(action, ((KeyMappingAccessor) slots[action]).kohsAnchors$clickCount());
                 }
             }
         }
@@ -424,6 +442,11 @@ public final class AnchorInput {
             JOURNAL.carry(burst, index, count - index, System.nanoTime());
             deferring = true;
             AnchorStats.nextTickPresses(count - index);
+            // The next stretch selects the last number key before its first use, if any.
+            burstNextSlot = -1;
+            for (int next = index; next < count && burst[next] != InputJournal.USE; next++) {
+                burstNextSlot = burst[next];
+            }
         }
         AnchorStats.orderedBurst();
     }

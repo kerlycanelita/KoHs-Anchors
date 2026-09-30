@@ -15,7 +15,7 @@ final class AnchorsLayout {
     static final int MAX_PANEL_HEIGHT = 380;
     /** Room on the right of the options for the scrollbar. */
     static final int SCROLL_GUTTER = 6;
-    static final int TAB_COUNT = 5;
+    static final int TAB_COUNT = 6;
     /** Below this a tab shows its icon only. */
     static final int MIN_TAB_WIDTH = 24;
 
@@ -193,11 +193,38 @@ final class AnchorsLayout {
         return new GuardModal(box, title, clip, body, cancel, confirm, padding, small);
     }
 
+    /**
+     * A window that explains something, such as Herzium: a title, a content area the window
+     * arranges itself (dropping its art before its text when it is short), and two buttons.
+     */
+    static InfoModal infoModal(int width, int height) {
+        int boxWidth = Math.min(Math.max(0, width - 12), clamp(width - 40, 250, 480));
+        int boxHeight = Math.min(Math.max(0, height - 10), clamp(height - 24, 170, 360));
+        Rect box = new Rect((width - boxWidth) / 2, (height - boxHeight) / 2, boxWidth, boxHeight);
+        boolean small = boxHeight < 220;
+        int padding = small ? 6 : 12;
+        int buttonHeight = small ? 14 : 18;
+        int buttonY = box.bottom() - padding - buttonHeight;
+        int cancelWidth = clamp(boxWidth / 3, 56, 150);
+        Rect cancel = new Rect(box.x() + padding, buttonY, cancelWidth, buttonHeight);
+        int confirmX = cancel.right() + 8;
+        Rect confirm = new Rect(confirmX, buttonY, Math.max(0, box.right() - padding - confirmX), buttonHeight);
+        Rect title = new Rect(box.x() + padding, box.y() + padding, boxWidth - padding * 2, small ? 20 : 30);
+        int contentTop = title.bottom() + (small ? 3 : 6);
+        Rect content = new Rect(box.x() + padding, contentTop, boxWidth - padding * 2,
+                Math.max(0, buttonY - (small ? 4 : 8) - contentTop));
+        return new InfoModal(box, title, content, cancel, confirm, padding, small);
+    }
+
     static int clamp(int value, int minimum, int maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
     record Modal(Rect box, Rect cancel, Rect confirm, int padding) {
+    }
+
+    /** An explaining window: its box, title, the content area between them, and two buttons. */
+    record InfoModal(Rect box, Rect title, Rect content, Rect cancel, Rect confirm, int padding, boolean small) {
     }
 
     /** The glowstone guard warning: its box, title, clip (possibly empty), text and buttons. */

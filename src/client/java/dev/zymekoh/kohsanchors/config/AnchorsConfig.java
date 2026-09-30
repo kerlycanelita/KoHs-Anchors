@@ -167,6 +167,16 @@ public final class AnchorsConfig {
         /** Shows Herzium's hotbar order in the settings and lets it be changed from here. */
         public boolean herziumIntegration = true;
 
+        /**
+         * Better communication with Herzium: the hotbar presses an anchor burst applies are
+         * reported to Herzium, and its hotbar preview is dropped when the burst goes on next tick
+         * with another item. Only does anything with Herzium installed.
+         */
+        public boolean herziumSync = true;
+
+        /** Explains Herzium and its orders when its tab opens; "Don't show again" turns it off. */
+        public boolean herziumIntro = true;
+
         // ------------------------------------------------------------------------------------
         // Advanced, not secure. Off by default, behind two warnings, and only active in
         // singleplayer, on the local network and on servers the player allowed one by one.

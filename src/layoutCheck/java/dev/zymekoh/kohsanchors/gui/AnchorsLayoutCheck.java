@@ -126,6 +126,25 @@ public final class AnchorsLayoutCheck {
             failures.add(size + "modal too short for the warning: " + modal.box());
         }
 
+        // The explaining windows (Herzium): title, content and buttons apart and inside the box.
+        AnchorsLayout.InfoModal info = AnchorsLayout.infoModal(width, height);
+        inside(size + "info", info.box(), screen, failures);
+        inside(size + "info title", info.title(), info.box(), failures);
+        inside(size + "info content", info.content(), info.box(), failures);
+        inside(size + "info cancel", info.cancel(), info.box(), failures);
+        inside(size + "info confirm", info.confirm(), info.box(), failures);
+        if (info.cancel().intersects(info.confirm()) || info.content().intersects(info.cancel())
+                || info.content().intersects(info.confirm()) || info.content().intersects(info.title())) {
+            failures.add(size + "info window regions overlap");
+        }
+        if (info.confirm().width() < 60 || info.cancel().width() < 40 || info.confirm().height() < 12) {
+            failures.add(size + "info buttons too small: " + info.cancel() + " " + info.confirm());
+        }
+        // Room for a link line and a few lines of text on every screen.
+        if (info.content().height() < 60 || info.content().width() < 200) {
+            failures.add(size + "info content too small: " + info.content());
+        }
+
         // The glowstone guard warning, with its text wrapped to one to five lines.
         for (int lines = 1; lines <= 5; lines++) {
             checkGuard(size + "guard (" + lines + " lines) ", AnchorsLayout.guardModal(width, height, lines, 854.0F / 480.0F),
