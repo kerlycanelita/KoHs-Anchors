@@ -142,6 +142,14 @@ final class AnchorsLayout {
 
     /** The warning modal and its two buttons, for a screen of this size. */
     static Modal modal(int width, int height) {
+        return modal(width, height, 0);
+    }
+
+    /**
+     * The warning modal with its left button widened towards {@code cancelWanted} pixels, for a
+     * label longer than the usual button (a translation), never past half the row.
+     */
+    static Modal modal(int width, int height, int cancelWanted) {
         int modalWidth = Math.min(Math.max(0, width - 12), clamp(width - 40, 220, 390));
         int modalHeight = Math.min(Math.max(0, height - 10), clamp(height - 30, 150, 236));
         Rect box = new Rect((width - modalWidth) / 2, (height - modalHeight) / 2, modalWidth, modalHeight);
@@ -149,6 +157,7 @@ final class AnchorsLayout {
         int buttonHeight = modalHeight < 180 ? 14 : 18;
         int buttonY = box.bottom() - padding - buttonHeight;
         int cancelWidth = clamp(modalWidth / 3, 56, 110);
+        cancelWidth = Math.max(cancelWidth, Math.min(cancelWanted, (modalWidth - padding * 2 - 8) / 2));
         Rect cancel = new Rect(box.x() + padding, buttonY, cancelWidth, buttonHeight);
         int confirmX = cancel.right() + 8;
         Rect confirm = new Rect(confirmX, buttonY, Math.max(0, box.right() - padding - confirmX), buttonHeight);

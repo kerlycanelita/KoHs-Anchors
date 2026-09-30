@@ -24,9 +24,10 @@ On top of that, 0.4.0 lets you make the anchor yours: paint it, light it, give t
 their own colour and pick the sounds you hear.
 
 > **Status: 0.4.0**, on [GitHub Releases](https://github.com/kerlycanelita/KoHs-Anchors/releases).
-> Measured on Minecraft 26.2 against a local server with
-> Grim Anticheat (see below). Every other version compiles and has each Mixin target checked
-> against its bytecode, but only 26.2 has been played.
+> Measured on Minecraft 26.2 against a local server with Grim Anticheat (see below). Every version
+> from 1.21.11 to 26.3 was then played in the KoHs Anchor lab, in singleplayer and against a
+> dedicated server with added latency, and has each Mixin target checked against its bytecode
+> ([how](docs/research/anchors-0.4.0.md#tested-on-every-version)).
 
 ## Gallery
 

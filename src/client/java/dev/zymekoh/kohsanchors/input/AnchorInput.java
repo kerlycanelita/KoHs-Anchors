@@ -18,6 +18,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
@@ -205,6 +206,12 @@ public final class AnchorInput {
 
     /** Once a client tick, before its input pass. */
     public static void tick(Minecraft minecraft) {
+        if (minecraft.player == null || minecraft.level == null || Mc.screen(minecraft) != null
+                || Mc.overlay(minecraft) != null) {
+            // A screen releases every key mapping and a world change starts input over: the order
+            // of presses Vanilla no longer counts goes with them.
+            JOURNAL.clear();
+        }
         AnchorVeil.tick(minecraft);
         DetonationPredictor.tick(minecraft);
         AnchorDebounce.tick(minecraft);
@@ -476,7 +483,7 @@ public final class AnchorInput {
             return Decision.RUN;
         }
         if (heldCount > 0 && (!heldFor.equals(target) || heldForCatchUp != catchUp)) {
-            return Decision.RUN;
+            return overflow(catchUp);
         }
         int slot = minecraft.player.getInventory().getSelectedSlot();
         if (heldCount > 0 && HELD_SLOTS[heldCount - 1] == slot) {
@@ -488,7 +495,7 @@ public final class AnchorInput {
             return Decision.DROP;
         }
         if (heldCount == HOLD_CAPACITY) {
-            return Decision.RUN;
+            return overflow(catchUp);
         }
         if (heldCount == 0) {
             heldSince = System.nanoTime();
@@ -499,6 +506,37 @@ public final class AnchorInput {
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
         return Decision.HOLD;
+    }
+
+    /**
+     * A click aimed at an exploding anchor that cannot wait (the wait is full, or waits for another
+     * block) is dropped: run now it could only land on the anchor that is going away, placing an
+     * anchor beside it or glowstone as a block where the server has already cleared it. Pressing
+     * faster than the server can remove anchors is what fills the wait. A click that waits for a
+     * drawn anchor to catch up runs, as the no-wait chain always has.
+     */
+    private static Decision overflow(boolean catchUp) {
+        if (catchUp) {
+            return Decision.RUN;
+        }
+        AnchorStats.droppedClicks(1);
+        return Decision.DROP;
+    }
+
+    /**
+     * Whether a held click, released, still does what it was pressed for: an anchor goes down on a
+     * free block, never on an anchor (a second anchor on top, or a detonation); glowstone charges an
+     * anchor, never goes down as a block. Anything else runs as pressed. A cycle whose anchor click
+     * was dropped (a full wait) would otherwise put its glowstone in the hole.
+     */
+    private static boolean stillMeant(Minecraft minecraft, ItemStack stack) {
+        if (stack.is(Items.RESPAWN_ANCHOR)) {
+            return !AnchorContext.targetsAnchor(minecraft);
+        }
+        if (stack.is(Items.GLOWSTONE)) {
+            return AnchorContext.targetsChargeableAnchor(minecraft);
+        }
+        return true;
     }
 
     /**
@@ -541,6 +579,7 @@ public final class AnchorInput {
         Inventory inventory = minecraft.player.getInventory();
         int selected = inventory.getSelectedSlot();
         int index = 0;
+        boolean waitAgain = false;
         for (; index < count && AnchorContext.ready(minecraft); index++) {
             if (tickSlot >= 0 && HELD_SLOTS[index] != tickSlot) {
                 // One slot per tick: the clicks held with another item run on the next tick.
@@ -550,12 +589,28 @@ public final class AnchorInput {
                 inventory.setSelectedSlot(HELD_SLOTS[index]);
             }
             Mc.pick(minecraft);
-            usesThisPass++;
-            lastUseSlot = HELD_SLOTS[index];
             if (!ServerLock.fastChain()) {
+                BlockPos aim = targetBlock(minecraft);
+                if (aim != null && DetonationPredictor.isDetonating(aim)) {
+                    // Since they were held, the clicks before these placed, charged and detonated
+                    // another anchor where they aim: they wait for that anchor's removal now, as
+                    // they would have if they had been pressed at this moment.
+                    waitAgain = true;
+                    heldFor = aim.immutable();
+                    heldForCatchUp = false;
+                    break;
+                }
+                if (!stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
+                    AnchorStats.droppedClicks(1);
+                    continue;
+                }
+                usesThisPass++;
+                lastUseSlot = HELD_SLOTS[index];
                 ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
                 continue;
             }
+            usesThisPass++;
+            lastUseSlot = HELD_SLOTS[index];
             // The chain judges the released click against what is drawn now, as any other.
             switch (FastChain.decide(minecraft)) {
                 case RUN -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem();
@@ -565,11 +620,14 @@ public final class AnchorInput {
         }
         if (index < count && AnchorContext.ready(minecraft)) {
             // Their block is free already: they wait only for a tick that has not clicked yet.
+            // Or it holds a new exploding anchor: they wait for its removal.
             System.arraycopy(HELD_SLOTS, index, HELD_SLOTS, 0, count - index);
             heldCount = count - index;
             heldSince = System.nanoTime();
-            heldCleared = true;
-            AnchorStats.nextTickPresses(count - index);
+            heldCleared = !waitAgain;
+            if (!waitAgain) {
+                AnchorStats.nextTickPresses(count - index);
+            }
         }
         // Selected again at once, sent to the server only by the next click or tick: this tick's
         // other clicks, pressed with the slot held now, wait for the next tick (mayConsume).

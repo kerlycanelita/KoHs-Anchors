@@ -88,7 +88,8 @@ final class SoundPicker {
         AnchorsUi.roundedOutline(graphics, x, y + 2, inner, 14, AnchorsTheme.ACCENT_BRIGHT);
         String shown = this.query.isEmpty() ? Component.translatable("kohs_anchors.sounds.search").getString()
                 : this.query + ((System.nanoTime() / 400_000_000L) % 2 == 0 ? "_" : "");
-        AnchorsUi.label(graphics, font, AnchorsUi.fit(font, shown, inner - 8), x + 4, y + 5,
+        AnchorsUi.label(graphics, font, this.query.isEmpty() ? AnchorsUi.fit(font, shown, inner - 8)
+                : AnchorsUi.fitEnd(font, shown, inner - 8), x + 4, y + 5,
                 this.query.isEmpty() ? AnchorsTheme.TEXT_DIM : AnchorsTheme.TITLE, false);
         y += 20;
 

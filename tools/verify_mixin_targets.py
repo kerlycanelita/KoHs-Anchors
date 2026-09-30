@@ -207,6 +207,15 @@ def check_version(version):
     handler = disassemble(version, "net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler")
     if not re.search(r"public int currentSequence\(\);", handler):
         problems.append("BlockStatePredictionHandler.currentSequence() is missing")
+    # A server state for a block the player's own prediction is waiting on is kept aside and
+    # applied at the acknowledgement: DetonationPredictor and AnchorVeil read the block at the tail
+    # of setServerVerifiedBlockState to tell which, and again at the tail of handleBlockChangedAck.
+    verified = method_body(level, "setServerVerifiedBlockState", "(net.minecraft.core.BlockPos")
+    if verified is None or not calls(verified, r"BlockStatePredictionHandler\.updateKnownServerState"):
+        problems.append("setServerVerifiedBlockState no longer keeps states aside through updateKnownServerState")
+    acknowledged = method_body(level, "handleBlockChangedAck", "(int)")
+    if acknowledged is None or not calls(acknowledged, r"BlockStatePredictionHandler\.endPredictionsUpTo"):
+        problems.append("handleBlockChangedAck no longer applies the kept states through endPredictionsUpTo")
 
     level_renderer = disassemble(version, "net.minecraft.client.renderer.LevelRenderer")
     storage = "SubmitNodeStorage" if version in ("1.21.11", "26.1", "26.1.1", "26.1.2") else "SubmitNodeCollector"

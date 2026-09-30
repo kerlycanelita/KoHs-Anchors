@@ -4,7 +4,8 @@
 - [Changelog](../CHANGELOG.md).
 - [KoHs Anchor's 0.4.0](research/anchors-0.4.0.md): Vanilla's tick shape and strict Grim, the ghost
   light, what the glow costs and how its light spreads, the settings screen's frame rate, how enemy
-  anchors are told apart, and what KoHs Anchor's tells Herzium.
+  anchors are told apart, what KoHs Anchor's tells Herzium, and the lab pass on every version that
+  found the Nether, 26.3 input and latency-chain bugs.
 - [Anchors and Herzium 0.2.1](research/anchors-and-herzium-0.2.1.md): which item each click really
   gets next to Herzium's last-input hotbar order, with "use" on the period key; every misplaced
   block, 0.2.0 against 0.2.1, and what belongs to Herzium.

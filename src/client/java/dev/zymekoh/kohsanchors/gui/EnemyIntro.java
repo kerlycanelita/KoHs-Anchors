@@ -53,7 +53,7 @@ final class EnemyIntro {
         if (this.phase != Phase.OPEN || button != Keys.LEFT_BUTTON) {
             return true;
         }
-        AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
+        AnchorsLayout.Modal modal = layout(width, height);
         if (modal.cancel().contains(mouseX, mouseY)) {
             this.hide = !this.hide;
             Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, this.hide ? 1.2F : 0.9F));
@@ -61,6 +61,16 @@ final class EnemyIntro {
             proceed();
         }
         return true;
+    }
+
+    /**
+     * The window at this size. The "Don't show again" switch widens for a translation longer than
+     * the usual button: its box, the gaps and the text.
+     */
+    private static AnchorsLayout.Modal layout(int width, int height) {
+        Font font = Minecraft.getInstance().font;
+        return AnchorsLayout.modal(width, height,
+                font.width(Component.translatable("kohs_anchors.enemy.intro.hide").getString()) + 21);
     }
 
     boolean keyPressed(int key) {
@@ -107,7 +117,7 @@ final class EnemyIntro {
             }
         }
         graphics.fill(0, 0, width, height, AnchorsTheme.withAlpha(0x06020A, Math.round(190 * open)));
-        AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
+        AnchorsLayout.Modal modal = layout(width, height);
         AnchorsLayout.Rect box = modal.box();
         float grow = 0.93F + 0.07F * open;
         int boxWidth = Math.round(box.width() * grow);

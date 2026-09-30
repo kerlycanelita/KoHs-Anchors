@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.EntityHitResult;
@@ -51,6 +52,12 @@ public final class AnchorContext {
 
     public static boolean targetsAnchor(Minecraft minecraft) {
         return targetState(minecraft) instanceof BlockState state && state.is(Blocks.RESPAWN_ANCHOR);
+    }
+
+    /** An anchor under the crosshair that takes another glowstone. */
+    public static boolean targetsChargeableAnchor(Minecraft minecraft) {
+        return targetState(minecraft) instanceof BlockState state && state.is(Blocks.RESPAWN_ANCHOR)
+                && state.getValue(RespawnAnchorBlock.CHARGE) < RespawnAnchorBlock.MAX_CHARGES;
     }
 
     /**

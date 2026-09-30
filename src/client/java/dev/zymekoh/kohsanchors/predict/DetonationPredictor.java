@@ -273,28 +273,58 @@ public final class DetonationPredictor {
         }
     }
 
-    /** Every block state the server sends. Anything but an anchor means the anchor is gone. */
-    public static void onServerBlock(ClientLevel level, BlockPos position, BlockState state) {
-        if (!DETONATING.isEmpty() && !state.is(Blocks.RESPAWN_ANCHOR) && DETONATING.remove(position) != null) {
-            AnchorCycles.exploded(position);
+    /**
+     * Every block state the server sends, after Vanilla handled it. Anything but an anchor means the
+     * anchor is gone. But while one of the player's own predictions there waits for its
+     * acknowledgement, Vanilla keeps the server's state aside and goes on drawing, and raycasting,
+     * the anchor it predicted, until the acknowledgement applies it (the server sends the
+     * acknowledgement at the end of its tick, after the states). Until then the anchor still counts as
+     * detonating: clicks aimed at it keep waiting, instead of landing on an anchor that is no longer
+     * there or taking it for one the server kept. The server lab caught that window with the glowstone
+     * and the sword of one cycle handled in one server tick.
+     */
+    public static void afterServerBlock(ClientLevel level, BlockPos position, BlockState state) {
+        AnchorVeil.afterServerBlock(level, position, state);
+        if (DETONATING.isEmpty() || state.is(Blocks.RESPAWN_ANCHOR)) {
+            return;
         }
-        AnchorVeil.onServerBlock(level, position, state);
+        Detonation detonation = DETONATING.get(position);
+        if (detonation == null) {
+            return;
+        }
+        if (level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR)) {
+            detonation.removedByServer = true;
+            return;
+        }
+        DETONATING.remove(position);
+        AnchorCycles.exploded(position);
     }
 
     /**
-     * The server acknowledged every click up to {@code sequence}. A detonation among them whose
-     * anchor is still in the world was not exploded: it is drawn again now.
+     * The server acknowledged every click up to {@code sequence}, and Vanilla has applied the states
+     * it kept aside for them. An anchor the server removed is gone from the world now; a detonation
+     * whose anchor is still in the world was not exploded: it is drawn again now.
      */
     public static void onAcknowledged(ClientLevel level, int sequence) {
+        AnchorVeil.onAcknowledged(level);
         if (DETONATING.isEmpty()) {
             return;
         }
-        for (Map.Entry<BlockPos, Detonation> entry : DETONATING.entrySet()) {
+        Iterator<Map.Entry<BlockPos, Detonation>> iterator = DETONATING.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<BlockPos, Detonation> entry = iterator.next();
             Detonation detonation = entry.getValue();
+            BlockPos position = entry.getKey();
+            if (detonation.removedByServer) {
+                if (!level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR)) {
+                    iterator.remove();
+                    AnchorCycles.exploded(position);
+                }
+                continue;
+            }
             if (detonation.failed || detonation.sequence < 0 || detonation.sequence > sequence) {
                 continue;
             }
-            BlockPos position = entry.getKey();
             if (level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR)) {
                 detonation.failed = true;
                 SHOWN_AT_INPUT.remove(position);
@@ -426,11 +456,15 @@ public final class DetonationPredictor {
     private record Pending(Vec3 center, long createdAt) {
     }
 
-    /** One detonation: when it was shown, the click's sequence number, and whether it failed. */
+    /**
+     * One detonation: when it was shown, the click's sequence number, whether it failed, and whether
+     * the server removed its anchor while Vanilla still draws it.
+     */
     private static final class Detonation {
         final long since;
         int sequence = -1;
         boolean failed;
+        boolean removedByServer;
 
         Detonation(long since) {
             this.since = since;

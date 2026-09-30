@@ -68,8 +68,9 @@ warnings and only act in singleplayer, on your local network and on servers you 
 
 - Client-side only. Fabric API is not required. [Mod Menu](https://modrinth.com/mod/modmenu) opens
   the settings.
-- Minecraft 1.21.11, 26.1, 26.1.1, 26.1.2, 26.2 and 26.3 (one jar per version). Only 26.2 has been
-  played; the others compile and have every Mixin target checked against their bytecode.
+- Minecraft 1.21.11, 26.1, 26.1.1, 26.1.2, 26.2 and 26.3 (one jar per version). Every one was
+  played in the KoHs Anchor lab before release, in singleplayer and against a dedicated server with
+  added latency; the Grim Anticheat measurements are from 26.2.
 - Works with Herzium, KoHs Crystal Tweaks and Sodium. Do not combine it with another mod that
   reorders or holds anchor clicks.
 

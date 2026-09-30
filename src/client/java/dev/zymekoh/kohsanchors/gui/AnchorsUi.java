@@ -112,7 +112,15 @@ final class AnchorsUi {
 
     /** {@code text} cut to {@code room} pixels. */
     static String fit(Font font, String text, int room) {
-        return font.width(text) > room ? font.plainSubstrByWidth(text, Math.max(0, room)) : text;
+        return ellipsis(font, text, room);
+    }
+
+    /**
+     * The end of {@code text} that fits in {@code room} pixels, for a field being typed in: the
+     * newest characters and the cursor stay in sight.
+     */
+    static String fitEnd(Font font, String text, int room) {
+        return font.width(text) > room ? font.plainSubstrByWidth(text, Math.max(0, room), true) : text;
     }
 
     /** {@code text} cut to {@code room} pixels with an ellipsis where it was cut. */
@@ -121,7 +129,10 @@ final class AnchorsUi {
             return text;
         }
         String dots = "…";
-        return font.plainSubstrByWidth(text, Math.max(0, room - font.width(dots))).stripTrailing() + dots;
+        if (room < font.width(dots)) {
+            return "";
+        }
+        return font.plainSubstrByWidth(text, room - font.width(dots)).stripTrailing() + dots;
     }
 
     static List<FormattedCharSequence> wrap(Font font, Component text, int width) {

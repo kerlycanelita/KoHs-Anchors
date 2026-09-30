@@ -2,8 +2,9 @@
 
 ## 0.4.0 — 30 September 2026
 
-Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.2; see
-[the 0.4.0 notes](docs/research/anchors-0.4.0.md).
+Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.2 against Grim, then
+played on every version from 1.21.11 to 26.3 in the KoHs Anchor lab, in singleplayer and against a
+dedicated server with 100 ms each way; see [the 0.4.0 notes](docs/research/anchors-0.4.0.md).
 
 ### Clicks and ticks
 
@@ -13,6 +14,24 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
   anchors and 0 alerts next to Herzium against Grim in its strict configuration.
 - Pressed order, fresh target, early clicks, no stacking and the instant detonation effects are
   always on and no longer options.
+- **Chains on one hole with latency** (found by the server lab, 100 ms each way, cycles pressed
+  every 150 ms):
+  - clicks held for an anchor's removal that are released after the next cycle already put,
+    charged and detonated another anchor in that hole now wait for that anchor too, instead of
+    landing on it;
+  - a click aimed at an exploding anchor when the wait is full (six clicks) is dropped instead of
+    landing on it, where it put an anchor beside the hole or glowstone in it: pressing faster than
+    the server removes anchors is what fills the wait;
+  - a held click, released, still has to do what it was pressed for: an anchor never goes down on
+    an anchor, glowstone never as a block;
+  - when the server removes a detonated anchor while one of the player's own predictions at that
+    block waits for its acknowledgement, Vanilla keeps drawing the anchor until the acknowledgement.
+    The anchor now counts as detonating until then, so the waiting clicks are no longer taken for
+    clicks on an anchor the server kept and dropped, the next anchor click no longer lands on it
+    (putting an anchor beside the hole), and the veil no longer lifts early to show it again;
+  - a hitch of the game (half a second in the lab) no longer hands a waiting burst to Vanilla's
+    order, which had used the sword three times: the press journal is cleared when a screen or a
+    world change releases the keys, and otherwise keeps its order for up to two seconds.
 - **Anchor debounce** and **glowstone debounce** (new, off by default): a second anchor or glowstone
   with the same slot sooner than the chosen time is refused before anything is predicted or sent.
   Switching slots ends the wait; detonations are never refused.
@@ -33,6 +52,8 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
   read it as false even in the Nether: the use played an explosion's sound and flash, hid the anchor
   until the server answered, and dropped the clicks that waited for it. The Nether's own dimension
   type now says it too. Found by the lab's Nether test; wrong since 0.1.0.
+- Without Sodium, the game log no longer warns that the Mixin for Sodium's chunk meshes could not
+  load its target: a Mixin plugin leaves that Mixin out unless Sodium is installed.
 
 ### Anchor custom (new tab)
 
@@ -105,6 +126,9 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
   side.
 - Faster settings screen: shapes drawn from many spans get a GUI stratum of their own, which had cost
   the screen half its frame rate.
+- A label with no room left ends in "…" instead of being cut mid-word, and fields being typed in
+  keep their end in sight. The enemy window's "Don't show again" widens for a longer translation
+  (Spanish's "No volver a mostrar" was cut to "No volver a most").
 - On 26.3 the settings screen answers to the mouse and keyboard again: Minecraft numbers keys, buttons
   and Ctrl with SDL's codes there (the left button is 1, Escape 41), and the screen compared GLFW's.
   Every key and button now comes from the game's own constants, so each jar carries its version's

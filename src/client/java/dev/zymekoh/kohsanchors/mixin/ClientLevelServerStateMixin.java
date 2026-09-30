@@ -20,9 +20,16 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 abstract class ClientLevelServerStateMixin {
     @Inject(method = "setServerVerifiedBlockState", at = @At("HEAD"))
     private void kohsAnchors$serverState(BlockPos position, BlockState state, int flags, CallbackInfo callback) {
-        ClientLevel level = (ClientLevel) (Object) this;
-        AnchorTracker.onServerBlock(level, position, state);
-        DetonationPredictor.onServerBlock(level, position, state);
+        AnchorTracker.onServerBlock((ClientLevel) (Object) this, position, state);
+    }
+
+    /**
+     * The same state after Vanilla handled it: applied, or kept aside until the acknowledgement of
+     * the player's own prediction at that block.
+     */
+    @Inject(method = "setServerVerifiedBlockState", at = @At("TAIL"))
+    private void kohsAnchors$serverStateHandled(BlockPos position, BlockState state, int flags, CallbackInfo callback) {
+        DetonationPredictor.afterServerBlock((ClientLevel) (Object) this, position, state);
     }
 
     /**

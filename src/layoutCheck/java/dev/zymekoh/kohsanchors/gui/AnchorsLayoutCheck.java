@@ -125,6 +125,14 @@ public final class AnchorsLayoutCheck {
         if (modal.confirm().width() < 60 || modal.cancel().width() < 40 || modal.confirm().height() < 12) {
             failures.add(size + "modal buttons too small: " + modal.cancel() + " " + modal.confirm());
         }
+        // A left button widened for a long translation stays inside, apart and never the narrower one.
+        AnchorsLayout.Modal wide = AnchorsLayout.modal(width, height, 400);
+        inside(size + "wide modal cancel", wide.cancel(), wide.box(), failures);
+        inside(size + "wide modal confirm", wide.confirm(), wide.box(), failures);
+        if (wide.cancel().intersects(wide.confirm()) || wide.cancel().width() < modal.cancel().width()
+                || wide.confirm().width() < 40) {
+            failures.add(size + "widened modal buttons: " + wide.cancel() + " " + wide.confirm());
+        }
         // The warning needs room for its title and at least three lines above the buttons.
         if (modal.cancel().y() - modal.box().y() < 70) {
             failures.add(size + "modal too short for the warning: " + modal.box());

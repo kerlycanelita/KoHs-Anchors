@@ -118,6 +118,7 @@ public final class AnchorVeil {
         }
         veil.shown = shown;
         veil.expected.addLast(expected);
+        veil.settled = null;
         veil.since = System.nanoTime();
         active = true;
         remesh(level, position);
@@ -125,11 +126,15 @@ public final class AnchorVeil {
     }
 
     /**
-     * Every block state the server sends. A state that matches one a veil expects consumes it and
-     * every state expected before it: when the server handles two clicks in one tick, only the
-     * second state reaches the client. When nothing is left to expect, the world is drawn again.
+     * Every block state the server sends, after Vanilla handled it. A state that matches one a veil
+     * expects consumes it and every state expected before it: when the server handles two clicks in
+     * one tick, only the second state reaches the client. When nothing is left to expect, the world
+     * is drawn again as soon as it shows the server's state. Vanilla keeps a state aside while one of
+     * the player's own predictions at that block waits for its acknowledgement, and draws the
+     * prediction meanwhile: lifted then, the veil showed the detonated anchor again until the
+     * acknowledgement, so it waits for it ({@link #onAcknowledged}).
      */
-    public static void onServerBlock(ClientLevel level, BlockPos position, BlockState state) {
+    public static void afterServerBlock(ClientLevel level, BlockPos position, BlockState state) {
         if (!active) {
             return;
         }
@@ -150,7 +155,30 @@ public final class AnchorVeil {
             veil.expected.pollFirst();
         }
         if (veil.expected.isEmpty()) {
-            lift(level, position);
+            if (level.getBlockState(position) == state) {
+                lift(level, position);
+            } else {
+                veil.settled = state;
+            }
+        }
+    }
+
+    /**
+     * After an acknowledgement, once Vanilla applied the states it kept aside: veils waiting for the
+     * world to show the server's last state are lifted when it does.
+     */
+    public static void onAcknowledged(ClientLevel level) {
+        if (!active) {
+            return;
+        }
+        for (Map.Entry<Long, Veil> entry : VEILS.entrySet()) {
+            BlockState settled = entry.getValue().settled;
+            if (settled != null) {
+                BlockPos position = BlockPos.of(entry.getKey());
+                if (level.getBlockState(position) == settled) {
+                    lift(level, position);
+                }
+            }
         }
     }
 
@@ -236,5 +264,7 @@ public final class AnchorVeil {
         volatile BlockState shown;
         final ArrayDeque<BlockState> expected = new ArrayDeque<>();
         volatile long since;
+        /** The server's last state, answered but kept aside by Vanilla until an acknowledgement. */
+        BlockState settled;
     }
 }

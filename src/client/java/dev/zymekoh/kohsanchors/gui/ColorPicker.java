@@ -150,7 +150,8 @@ final class ColorPicker {
                     ? AnchorsTheme.ACCENT_BRIGHT : over ? AnchorsTheme.CARD_BORDER_HOVER : AnchorsTheme.CARD_BORDER, fade));
             String text = this.editingHex ? this.hexText + ((System.nanoTime() / 400_000_000L) % 2 == 0 ? "_" : "")
                     : ColorMath.hex(current);
-            AnchorsUi.label(graphics, font, AnchorsUi.fit(font, text, this.hexWidth - 6), this.hexX + 4, fieldY + 3,
+            AnchorsUi.label(graphics, font, this.editingHex ? AnchorsUi.fitEnd(font, text, this.hexWidth - 6)
+                    : AnchorsUi.fit(font, text, this.hexWidth - 6), this.hexX + 4, fieldY + 3,
                     AnchorsTheme.fade(this.editingHex ? AnchorsTheme.TITLE : AnchorsTheme.TEXT, fade), false);
         }
 

@@ -14,10 +14,15 @@ final class InputJournal {
     /** No real burst is this long; anything longer is not worth reordering and is left to Vanilla. */
     static final int CAPACITY = 32;
     /**
-     * A press this old was not handled by the next tick, so input handling was interrupted (a
-     * screen, a hitch, a world change). The whole pass is then left to Vanilla.
+     * A press this old when its pass comes was left behind by something that stopped input for a
+     * long while, and the pass is left to Vanilla. A screen or a world change never gets here: it
+     * releases every key mapping and the journal is cleared with them ({@link #clear}). Presses
+     * carried to the next tick are stamped again, and a hitch of the game between two ticks (a
+     * chunk, a collection) keeps the pressed order: at 250 ms, a half-second hitch in the lab
+     * handed a waiting "anchor, use, glowstone, use, sword, use" to Vanilla, which used the sword
+     * three times.
      */
-    private static final long MAX_AGE_NANOS = 250_000_000L;
+    private static final long MAX_AGE_NANOS = 2_000_000_000L;
 
     private final int[] actions = new int[CAPACITY];
     private final long[] times = new long[CAPACITY];
@@ -32,6 +37,12 @@ final class InputJournal {
         this.actions[this.size] = action;
         this.times[this.size] = now;
         this.size++;
+    }
+
+    /** Forgets every press: Vanilla released them all (a screen opened, the world changed). */
+    void clear() {
+        this.size = 0;
+        this.unusable = false;
     }
 
     /** Forgets the latest use press: it was run at once and is no longer pending. */
