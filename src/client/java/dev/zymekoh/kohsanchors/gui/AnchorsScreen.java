@@ -117,6 +117,7 @@ public final class AnchorsScreen extends Screen {
 
     private AnchorWorkshop workshop;
     private AnchorsWarning warning;
+    private GlowstoneGuardWarning guardWarning;
     private DevModeWarning devWarning;
     private CrystalModal crystalModal;
     private SoundPicker soundPicker;
@@ -251,9 +252,24 @@ public final class AnchorsScreen extends Screen {
                 value -> settings.glowstoneDebounceMillis = value, DEBOUNCE_STOPS, AnchorsScreen::formatDebounce,
                 AnchorDebounce::settingsChanged, "AnchorDebounce.refuses (charges and glowstone blocks)",
                 "never a detonation · slot change ends the window", "config glowstoneDebounceMillis");
-        offset = toggle(offset, "glowstone_guard", () -> settings.glowstoneGuard, value -> settings.glowstoneGuard = value,
+        // Switching the guard off is immediate; switching it on shows what it takes away first.
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("glowstone_guard"),
+                description("glowstone_guard"), this.font, () -> settings.glowstoneGuard, () -> {
+                    if (settings.glowstoneGuard) {
+                        settings.glowstoneGuard = false;
+                        AnchorsConfig.changed();
+                        AnchorsConfig.save();
+                        return;
+                    }
+                    this.guardWarning = new GlowstoneGuardWarning(settings.interfaceMotion, () -> {
+                        settings.glowstoneGuard = true;
+                        AnchorsConfig.changed();
+                        AnchorsConfig.save();
+                    });
+                }, false, null, "glowstone_guard",
                 "AnchorDebounce.refuses: glowstone that would go down as a block, within 4 s of an anchor action",
-                "FAIL before any prediction or packet · counted: " + AnchorStats.glowstoneGuarded());
+                "FAIL before any prediction or packet · counted: " + AnchorStats.glowstoneGuarded(),
+                "GlowstoneGuardWarning: LoopingClip.SAFE_ANCHOR, then the charge"));
         offset = section(offset, "kohs_anchors.section.detonation");
         offset = toggle(offset, "hide_detonating", () -> settings.hideDetonating, value -> settings.hideDetonating = value,
                 "AnchorVeil.predict(level, pos, AIR, AIR)", "RenderSectionRegionMixin @ getBlockState HEAD",
@@ -721,8 +737,7 @@ public final class AnchorsScreen extends Screen {
         boolean motion = settings().interfaceMotion;
         double seconds = now / 1_000_000_000.0D;
         float intro = motion ? AnchorsTheme.easeOutCubic(progress(now - this.openedAt, INTRO_NANOS)) : 1.0F;
-        boolean modal = this.warning != null || this.devWarning != null || this.crystalModal != null
-                || this.soundPicker != null || this.popover != null;
+        boolean modal = modalOpen();
         // Under a modal nothing is hovered: the modal owns the pointer.
         int pointerX = modal ? -1 : mouseX;
         int pointerY = modal ? -1 : mouseY;
@@ -794,6 +809,12 @@ public final class AnchorsScreen extends Screen {
             if (this.crystalModal.done()) {
                 this.crystalModal = null;
                 rebuildWidgets();
+            }
+        }
+        if (this.guardWarning != null) {
+            this.guardWarning.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
+            if (this.guardWarning.done()) {
+                this.guardWarning = null;
             }
         }
         if (this.devWarning == null) {
@@ -1326,6 +1347,9 @@ public final class AnchorsScreen extends Screen {
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
+        if (this.guardWarning != null) {
+            return this.guardWarning.mouseClicked(this.font, this.width, this.height, mouseX, mouseY, button);
+        }
         if (this.crystalModal != null) {
             return this.crystalModal.mouseClicked(this.width, this.height, mouseX, mouseY, button);
         }
@@ -1385,7 +1409,8 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null) {
+        if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
+                || this.guardWarning != null) {
             return true;
         }
         if (this.popover != null) {
@@ -1414,7 +1439,7 @@ public final class AnchorsScreen extends Screen {
         if (this.warning != null) {
             return this.warning.mouseReleased();
         }
-        if (this.devWarning != null || this.crystalModal != null || this.soundPicker != null) {
+        if (this.devWarning != null || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null) {
             return true;
         }
         if (this.popover != null) {
@@ -1442,7 +1467,8 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.popover != null) {
+        if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.popover != null
+                || this.guardWarning != null) {
             return true;
         }
         if (this.soundPicker != null) {
@@ -1464,6 +1490,9 @@ public final class AnchorsScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key();
+        if (this.guardWarning != null) {
+            return this.guardWarning.keyPressed(key);
+        }
         if (this.crystalModal != null) {
             return this.crystalModal.keyPressed(key);
         }
@@ -1608,11 +1637,21 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean shouldCloseOnEsc() {
-        return this.warning == null && this.devWarning == null && this.crystalModal == null && this.soundPicker == null
-                && this.popover == null && (this.workshop == null || !this.workshop.editingText());
+        return !modalOpen() && (this.workshop == null || !this.workshop.editingText());
+    }
+
+    /** Whether a warning, picker or popover owns the pointer and the keyboard. */
+    private boolean modalOpen() {
+        return this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
+                || this.popover != null || this.guardWarning != null;
     }
 
     private void saveSettings() {
+        if (this.guardWarning != null) {
+            // Leaving under the warning: its clip stops and lets go of its texture.
+            this.guardWarning.close();
+            this.guardWarning = null;
+        }
         if (this.saved) {
             return;
         }

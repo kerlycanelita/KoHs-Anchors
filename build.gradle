@@ -145,6 +145,10 @@ dependencies {
 		compileOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 		runtimeOnly "com.terraformersmc:modmenu:${project.modmenu_version}"
 	}
+	// The glowstone guard's warning plays an H.264 clip. JCodec decodes it in pure Java and ships
+	// inside the jar (BSD 2-clause; its notice is licenses/jcodec.txt, copied into the jar below).
+	implementation "org.jcodec:jcodec:${project.jcodec_version}"
+	include "org.jcodec:jcodec:${project.jcodec_version}"
 }
 
 // Every JAR is tied to exactly one Minecraft version. Modrinth reads this value from
@@ -220,5 +224,8 @@ jar {
 
 	from('LICENSE') {
 		rename { "${it}_kohs_anchors" }
+	}
+	from('licenses/jcodec.txt') {
+		rename { 'LICENSE_jcodec' }
 	}
 }

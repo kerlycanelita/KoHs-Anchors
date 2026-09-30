@@ -125,6 +125,53 @@ public final class AnchorsLayoutCheck {
         if (modal.cancel().y() - modal.box().y() < 70) {
             failures.add(size + "modal too short for the warning: " + modal.box());
         }
+
+        // The glowstone guard warning, with its text wrapped to one to five lines.
+        for (int lines = 1; lines <= 5; lines++) {
+            checkGuard(size + "guard (" + lines + " lines) ", AnchorsLayout.guardModal(width, height, lines, 854.0F / 480.0F),
+                    screen, lines, failures);
+        }
+    }
+
+    private static void checkGuard(String name, AnchorsLayout.GuardModal guard, AnchorsLayout.Rect screen, int lines,
+            List<String> failures) {
+        AnchorsLayout.Rect box = guard.box();
+        inside(name + "box", box, screen, failures);
+        inside(name + "title", guard.title(), box, failures);
+        inside(name + "cancel", guard.cancel(), box, failures);
+        inside(name + "confirm", guard.confirm(), box, failures);
+        inside(name + "text", guard.body(), box, failures);
+        if (guard.cancel().intersects(guard.confirm())) {
+            failures.add(name + "buttons overlap");
+        }
+        if (guard.confirm().width() < 60 || guard.cancel().width() < 40 || guard.confirm().height() < 12) {
+            failures.add(name + "buttons too small: " + guard.cancel() + " " + guard.confirm());
+        }
+        if (guard.body().bottom() > guard.cancel().y() || guard.body().y() < guard.title().bottom()) {
+            failures.add(name + "text overlaps the title or the buttons: " + guard.body());
+        }
+        // Up to three lines of text always fit whole; longer text may be cut on the smallest screens.
+        if (lines <= 3 && guard.body().height() < lines * 10) {
+            failures.add(name + "text cut: " + guard.body());
+        }
+        AnchorsLayout.Rect clip = guard.clip();
+        if (clip.width() > 0) {
+            inside(name + "clip", clip, box, failures);
+            if (clip.height() < AnchorsLayout.MIN_CLIP_HEIGHT) {
+                failures.add(name + "clip too small: " + clip);
+            }
+            if (clip.intersects(guard.title()) || clip.intersects(guard.body()) || clip.intersects(guard.cancel())
+                    || clip.intersects(guard.confirm())) {
+                failures.add(name + "clip overlaps the text or the buttons: " + clip);
+            }
+            float aspect = clip.width() / (float) clip.height();
+            if (Math.abs(aspect - 854.0F / 480.0F) > 0.06F) {
+                failures.add(name + "clip stretched: " + clip);
+            }
+        } else if (box.height() >= 250 && lines <= 3) {
+            // A screen this tall always has room for the clip.
+            failures.add(name + "clip dropped on a tall screen: " + box);
+        }
     }
 
     private static void inside(String name, AnchorsLayout.Rect rect, AnchorsLayout.Rect outer, List<String> failures) {

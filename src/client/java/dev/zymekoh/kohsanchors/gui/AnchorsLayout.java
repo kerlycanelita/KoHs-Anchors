@@ -148,11 +148,60 @@ final class AnchorsLayout {
         return new Modal(box, cancel, confirm, padding);
     }
 
+    /** Below this height the guard warning's clip is left out and the text stays. */
+    static final int MIN_CLIP_HEIGHT = 40;
+
+    /**
+     * The glowstone guard's warning: a title, the clip at its own aspect ({@code aspect} is width
+     * over height), the text under it in {@code bodyLines} lines, and two buttons. The clip takes
+     * whatever room the rest leaves, and is dropped before the text when that is too little.
+     */
+    static GuardModal guardModal(int width, int height, int bodyLines, float aspect) {
+        int boxWidth = Math.min(Math.max(0, width - 12), clamp(width - 40, 240, 470));
+        int boxHeight = Math.min(Math.max(0, height - 10), clamp(height - 24, 170, 340));
+        Rect box = new Rect((width - boxWidth) / 2, (height - boxHeight) / 2, boxWidth, boxHeight);
+        boolean small = boxHeight < 210;
+        int padding = small ? 6 : 12;
+        int buttonHeight = small ? 14 : 18;
+        int buttonY = box.bottom() - padding - buttonHeight;
+        int cancelWidth = clamp(boxWidth / 3, 56, 130);
+        Rect cancel = new Rect(box.x() + padding, buttonY, cancelWidth, buttonHeight);
+        int confirmX = cancel.right() + 8;
+        Rect confirm = new Rect(confirmX, buttonY, Math.max(0, box.right() - padding - confirmX), buttonHeight);
+
+        Rect title = new Rect(box.x() + padding, box.y() + padding, boxWidth - padding * 2, small ? 20 : 31);
+        int innerWidth = boxWidth - padding * 2;
+        int bodyHeight = Math.max(1, bodyLines) * 10;
+        int top = title.bottom() + (small ? 3 : 6);
+        int bottom = buttonY - (small ? 4 : 8);
+        int room = bottom - top - bodyHeight - 5;
+        int clipWidth = Math.min(innerWidth, Math.round(room * aspect));
+        int clipHeight = Math.round(clipWidth / aspect);
+        Rect clip = Rect.EMPTY;
+        int contentHeight = bodyHeight;
+        if (clipHeight >= MIN_CLIP_HEIGHT && clipHeight <= room) {
+            clip = new Rect(box.centerX() - clipWidth / 2, 0, clipWidth, clipHeight);
+            contentHeight += clipHeight + 5;
+        }
+        // The clip and the text sit together in the middle of the room between title and buttons.
+        int contentTop = top + Math.max(0, (bottom - top - contentHeight) / 2);
+        if (clip.width() > 0) {
+            clip = new Rect(clip.x(), contentTop, clip.width(), clip.height());
+            contentTop = clip.bottom() + 5;
+        }
+        Rect body = new Rect(box.x() + padding, contentTop, innerWidth, Math.min(bodyHeight, Math.max(0, bottom - contentTop)));
+        return new GuardModal(box, title, clip, body, cancel, confirm, padding, small);
+    }
+
     static int clamp(int value, int minimum, int maximum) {
         return Math.max(minimum, Math.min(maximum, value));
     }
 
     record Modal(Rect box, Rect cancel, Rect confirm, int padding) {
+    }
+
+    /** The glowstone guard warning: its box, title, clip (possibly empty), text and buttons. */
+    record GuardModal(Rect box, Rect title, Rect clip, Rect body, Rect cancel, Rect confirm, int padding, boolean small) {
     }
 
     record Workshop(Rect left, Rect stage, Rect right, boolean narrow) {

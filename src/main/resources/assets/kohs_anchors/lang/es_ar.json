@@ -218,5 +218,7 @@
   "kohs_anchors.glowstone_warning.accept": "Activar",
   "kohs_anchors.glowstone_warning.cancel": "Mantener safe anchor",
   "kohs_anchors.glowstone_warning.charging": "Cargando…",
-  "kohs_anchors.glowstone_warning.activated": "Glowstone guard activado"
+  "kohs_anchors.glowstone_warning.activated": "Glowstone guard activado",
+  "kohs_anchors.glowstone_warning.clip": "Safe anchor",
+  "kohs_anchors.glowstone_warning.no_video": "No se pudo reproducir el clip."
 }
