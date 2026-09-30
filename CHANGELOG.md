@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — 30 September 2026
+## 0.4.0 — 2026-09-30
 
 Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.2 against Grim, then
 played on every version from 1.21.11 to 26.3 in the KoHs Anchor lab, in singleplayer and against a
@@ -137,7 +137,7 @@ dedicated server with 100 ms each way; see [the 0.4.0 notes](docs/research/ancho
   size.
 - New icon. Every text in English and seven Spanish locales.
 
-## 0.3.0 — unreleased
+## 0.3.0 — 2026-09-28
 
 Why Anchor Optimizer felt faster, and the answer, with a new settings screen. See
 [the write-up](docs/research/advanced-options-0.3.0.md). Not measured yet.
@@ -162,7 +162,7 @@ Why Anchor Optimizer felt faster, and the answer, with a new settings screen. Se
   danger. Session numbers change with the tab.
 - `verify_mixin_targets.py` checks the new targets on every version.
 
-## 0.2.1 — unreleased
+## 0.2.1 — 2026-09-28
 
 Anchor bursts that went wrong next to Herzium's last-input hotbar order, reproduced with the
 player's own setup (use on the period key, Herzium 1.10.5, the mctiers anchor hotbar) in the KoHs
@@ -186,7 +186,7 @@ Anchor lab. See [the write-up](docs/research/anchors-and-herzium-0.2.1.md).
 - The key "use" is bound to makes no difference: the period key and the right mouse button give
   the same results.
 
-## 0.2.0 — unreleased
+## 0.2.0 — released as part of 0.2.1
 
 Measured on a local Minecraft 26.2 server with Grim Anticheat and 0 to 150 ms of added latency:
 152–165 ms per anchor when clicking every 50 ms, every anchor exploded, no wasted click and no
@@ -205,7 +205,7 @@ Grim alert. See [the lab write-up](docs/research/server-lab-0.2.0.md).
   and section updates still arrive through it.
 - `build-all.ps1` ignores an inherited `JAVA_HOME` that is not JDK 25 or newer.
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-09-27
 
 First build of the new KoHs Anchor's. It replaces the archived `KoHs-Anchors-26` and
 `koks-anchors-1` projects and shares no code with them.
