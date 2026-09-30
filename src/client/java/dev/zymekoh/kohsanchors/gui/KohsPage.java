@@ -17,9 +17,9 @@ import net.minecraft.sounds.SoundEvents;
 import net.minecraft.util.FormattedCharSequence;
 
 /**
- * The KoHs tab: Zymery Dria, who makes KoHs Anchor's, as the KoHs Mod Suite site draws her (a
- * hooded figure with glowing eyes and a code sigil), and below her the name, the aka, what she
- * does, links to Discord, the site and Modrinth, and "KoHs on top" to close.
+ * The KoHs tab: Zymekoh (a.k.a. Kohzemyora), who makes KoHs Anchor's, as the KoHs Mod Suite site
+ * draws her (a hooded figure with glowing eyes and a code sigil), and below her the name, the aka,
+ * what she does, links to Discord, the site and Modrinth, and "KoHs on top" to close.
  *
  * <p>The illustration is the site's own drawing, taken apart into layers so each can move as it
  * does there and a little more: the sigil's ring and its runes turn opposite ways, the eyes blink
@@ -287,7 +287,7 @@ final class KohsPage {
         drawText(graphics, font, body, parts, since, intro, seconds);
         drawButtons(graphics, font, parts, mouseX, mouseY, since, intro, response, seconds);
         drawFinale(graphics, font, body, parts, since, intro, seconds);
-        DevInspector.node("KohsPage", "Zymery Dria", body.x(), body.y(), body.width(), body.height(),
+        DevInspector.node("KohsPage", "Zymekoh", body.x(), body.y(), body.width(), body.height(),
                 "the KoHs Mod Suite site's drawing, in " + (7 + SHARDS.length) + " layers",
                 "Discord · site · Modrinth through ConfirmLinkScreen");
     }
@@ -523,21 +523,18 @@ final class KohsPage {
             AnchorsUi.glint(graphics, font, name, 0, 0, seconds);
             graphics.pose().popMatrix();
         }
-        // a.k.a. zymekoh · kohzemyora: the names in pink.
+        // a.k.a. kohzemyora: the other name, from pink to lilac.
         float akaIn = appear(since, 0.55F, 0.35F);
         String prefix = text("kohs_anchors.kohs.aka") + " ";
-        String first = "zymekoh";
-        String dot = " · ";
-        String second = "kohzemyora";
-        int width = font.width(prefix + first + dot + second);
+        String first = "kohze";
+        String second = "myora";
+        int width = font.width(prefix + first + second);
         int x = centerX - width / 2;
         int y = parts.akaY() + Math.round((1.0F - akaIn) * 4);
         AnchorsUi.label(graphics, font, prefix, x, y, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro * akaIn), false);
         x += font.width(prefix);
         AnchorsUi.label(graphics, font, first, x, y, AnchorsTheme.fade(0xFFFF8AD8, intro * akaIn), false);
         x += font.width(first);
-        AnchorsUi.label(graphics, font, dot, x, y, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro * akaIn), false);
-        x += font.width(dot);
         AnchorsUi.label(graphics, font, second, x, y, AnchorsTheme.fade(0xFFC084FC, intro * akaIn), false);
         // What she does.
         int lineY = parts.roleY();

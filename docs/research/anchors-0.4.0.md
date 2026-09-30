@@ -102,6 +102,13 @@ a later element is drawn over what it overlaps.
 The screen's animations are all timed with `System.nanoTime`, so they play at the same speed at any
 frame rate, and each can be turned off with *Interface animations*.
 
+The enemy anchors' Advanced tab draws a whole battle while its options are being made: fourteen
+anchors, glowstone in flight, shockwaves, smoke and sparks. Every glow, ring and puff is one blit of
+a small white mask tinted per draw instead of hundreds of spans, the anchors share one texture per
+charge, and the fight is stepped with the real time between frames. **Measured** in the lab at
+1920 × 1080 under a software renderer: 23 to 24 frames a second on the battle, against 21 to 28 on
+the other tabs in the same run.
+
 ## Enemy anchors: who placed it
 
 An anchor is an enemy's when it appears where the player has no placement in flight. 0.3.x did not

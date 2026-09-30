@@ -23,7 +23,8 @@ it in the shape Vanilla sends it, and never adds a click of its own.
 On top of that, 0.4.0 lets you make the anchor yours: paint it, light it, give the enemy's anchors
 their own colour and pick the sounds you hear.
 
-> **Status: 0.4.0, development build.** Measured on Minecraft 26.2 against a local server with
+> **Status: 0.4.0**, on [GitHub Releases](https://github.com/kerlycanelita/KoHs-Anchors/releases).
+> Measured on Minecraft 26.2 against a local server with
 > Grim Anticheat (see below). Every other version compiles and has each Mixin target checked
 > against its bytecode, but only 26.2 has been played.
 
@@ -39,11 +40,13 @@ their own colour and pick the sounds you hear.
 | **General**: debounce, glowstone guard, detonation and what is always on. | **Anchor custom**: colour the frame and the glow, or paint them pixel by pixel. |
 | ![The Glow tab with the glowing anchor preview](docs/images/gallery-glow-tab.png) | ![An enemy anchor's glow lighting a pillar and a wall in red](docs/images/gallery-glow-pillar.jpg) |
 | **Glow anchors**: power, bloom, light on the surroundings and quality. | The light spreads through the air: down a pillar, onto the floor and the walls. |
-| ![What enemy anchors are, the first time](docs/images/gallery-enemy-intro.png) | ![The enemy anchors page, in crimson](docs/images/gallery-enemy-page.png) |
-| **Enemy anchors**: yours and the other players', told apart at a glance. | Their page turns the whole screen red, with their anchor as the world draws it. |
+| ![What enemy anchors are, the first time](docs/images/gallery-enemy-intro.png) | ![The enemy anchors' Glow tab, in crimson](docs/images/gallery-enemy-page.png) |
+| **Enemy anchors**: yours and the other players', told apart at a glance. | Their side turns the whole screen red, with three tabs and their anchor as the world draws it. |
+| ![The enemy anchors' Colours tab](docs/images/gallery-enemy-colours.png) | ![Coming soon: an endless battle between your anchors and theirs](docs/images/gallery-enemy-battle.jpg) |
+| **Colours**: the colour their anchors glow in. | **Advanced** is coming soon; until then your anchors and theirs fight it out with glowstone. |
 | ![The glowstone guard warning with the safe anchor clip](docs/images/gallery-glowstone-guard.jpg) | ![Herzium's orders explained, last input recommended](docs/images/gallery-herzium.png) |
 | **Glowstone guard** shows what it takes away, a safe anchor clip at 60 fps, before it turns on. | **Herzium**: its hotbar order, read from Herzium itself, and how the two mods talk. |
-| ![The KoHs tab: Zymery Dria and her links](docs/images/gallery-kohs.png) | ![The server lab at the end of a run: 12 of 12 anchors, 0 Grim alerts](docs/images/lab-bench-finished.png) |
+| ![The KoHs tab: Zymekoh and her links](docs/images/gallery-kohs.png) | ![The server lab at the end of a run: 12 of 12 anchors, 0 Grim alerts](docs/images/lab-bench-finished.png) |
 | **KoHs**: who makes the mod, with Discord, the site and Modrinth. | The KoHs Anchor lab, against a Grim server with added latency. |
 
 ## What it changes
@@ -110,8 +113,10 @@ its own beat. Walls hide it, so it never shows an anchor you could not see. Thre
 detail for frames; anchors out of view and faces turned away are never drawn.
 
 **Enemy anchors**, the ones that appear where you placed none, glow in a colour of their own. The
-header's switch opens their page: your anchor rises, the screen turns red, and theirs takes its
-place.
+header's switch turns the screen to their side: your anchor rises, the screen turns red, theirs takes
+its place, and three tabs of their own appear: **Glow**, **Colours** and **Advanced**. Advanced is
+coming soon; until then it shows your anchors and theirs throwing glowstone at each other, in three
+layers, with a detonation on every fifth hit. Click to throw one yourself.
 
 ### Sounds
 
@@ -184,7 +189,8 @@ at a container are left entirely to Vanilla.
 With [Mod Menu](https://modrinth.com/mod/modmenu) installed, open *Mods → KoHs Anchor's*. The
 screen is black-purple glass over a transparent veil with an anchor sigil turning behind it, in
 seven tabs: General, Anchor custom, Glow anchors, Sounds, the crimson Advanced · not secure,
-Herzium and KoHs. Beside the options, a real respawn anchor drawn by the game's own block renderer
+Herzium and KoHs; the header's switch turns it to the enemy's side, with three tabs of its own, and
+its mark is a small Nether portal turning on itself. Beside the options, a real respawn anchor drawn by the game's own block renderer
 turns inside a ritual circle that lights a node for every charge (drag to turn it, scroll to zoom,
 click to charge it), above this session's numbers. Every animation can be turned off with
 *Interface animations*. Settings live in `config/kohs_anchors.json`, the painted skin in
@@ -204,7 +210,9 @@ Client-side only. Fabric API is not required. Each jar declares exactly one Mine
 ## Install
 
 1. Install Fabric Loader for your Minecraft version (see the table above).
-2. Place the matching `kohs-anchors-<minecraft>-<version>.jar` in the instance's `mods` folder.
+2. Download the matching `kohs-anchors-<minecraft>-<version>.jar` from
+   [Releases](https://github.com/kerlycanelita/KoHs-Anchors/releases) (`CHECKSUMS.sha256` lists
+   their SHA-256 sums) and place it in the instance's `mods` folder.
 3. Optionally install Mod Menu to open the settings from the mod list.
 
 ## Compatibility and multiplayer
@@ -238,7 +246,9 @@ powershell -ExecutionPolicy Bypass -File tools\build-all.ps1
 
 builds every version, checks every Mixin target against that version's Minecraft bytecode
 (`tools/verify_mixin_targets.py`) and copies the jars with their checksums to
-`dist/<mod_version>/`.
+`dist/<mod_version>/`. On Linux and macOS, `tools/build-all.sh` does the same. Pushing a tag such
+as `v0.4.0` runs it on GitHub Actions (`.github/workflows/release.yml`) and publishes the jars and
+their checksums as a release, with that version's changelog as its notes.
 
 ## Repository layout
 
@@ -268,5 +278,5 @@ Modrinth and Discord logos belong to their owners and only link to them.
 
 ## Credits
 
-Made by **Zymery Dria** (a.k.a. zymekoh · kohzemyora) for the
+Made by **Zymekoh** (a.k.a. Kohzemyora) for the
 [KoHs Mod Suite](https://kerlycanelita.github.io/KoHs-Mod-Suite/). KoHs on top.

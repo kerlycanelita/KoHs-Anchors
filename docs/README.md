@@ -46,4 +46,7 @@ default settings.
 - `gradlew build "-Pmc=<version>"` compiles and runs `checkLayout`.
 - `python tools/verify_mixin_targets.py [versions]` checks every Mixin target and the call order
   the mod relies on against each version's Minecraft bytecode.
-- `tools/build-all.ps1` does both for every version and fills `dist/<mod_version>/`.
+- `tools/build-all.ps1` (Windows) and `tools/build-all.sh` (Linux, macOS) do both for every
+  version and fill `dist/<mod_version>/`.
+- A tag such as `v0.4.0` runs `tools/build-all.sh` on GitHub Actions and publishes the jars as a
+  release (`.github/workflows/release.yml`).

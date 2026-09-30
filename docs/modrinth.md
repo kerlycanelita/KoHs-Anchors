@@ -30,7 +30,9 @@ sends them, and never adds a click of its own.
   the anchor pixel by pixel. Syncs with **KoHs Crystal Tweaks** colours in one click.
 - **Glow anchors**: charged anchors shine, bloom and light the floor, walls and pillars around them.
   Walls hide the light, and three qualities keep it cheap.
-- **Enemy anchors**: anchors other players placed glow in their own colour.
+- **Enemy anchors**: anchors other players placed glow in their own colour, with a side of the
+  settings of their own (and a battle between your anchors and theirs while its advanced options
+  are coming).
 - **Sounds**: pick the charge and explosion sounds, with volume and pitch.
 - **Detonation**: hide the anchor you detonate at once (with its light), and choose the explosion's
   debris and smoke.
@@ -78,4 +80,4 @@ warnings and only act in singleplayer, on your local network and on servers you 
 - [Discord](https://discord.gg/9t2VxEF7UU)
 - [KoHs Mod Suite](https://kerlycanelita.github.io/KoHs-Mod-Suite/)
 
-Made by **Zymery Dria** (a.k.a. zymekoh · kohzemyora). KoHs on top.
+Made by **Zymekoh** (a.k.a. Kohzemyora). KoHs on top.

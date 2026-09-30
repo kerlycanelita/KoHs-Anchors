@@ -82,14 +82,18 @@ public final class AnchorsLayoutCheck {
         if (layout.header.bottom() > layout.tabs.y() || layout.tabs.bottom() > layout.options.y()) {
             failures.add(size + "tabs overlap the header or the options");
         }
-        for (int index = 0; index < AnchorsLayout.TAB_COUNT; index++) {
-            AnchorsLayout.Rect tab = layout.tab(index);
-            inside(size + "tab " + index, tab, layout.tabs, failures);
-            if (tab.width() < AnchorsLayout.MIN_TAB_WIDTH || tab.height() < 12) {
-                failures.add(size + "tab " + index + " too small for its icon: " + tab);
-            }
-            if (index > 0 && tab.intersects(layout.tab(index - 1))) {
-                failures.add(size + "tabs " + (index - 1) + " and " + index + " overlap");
+        // The player's seven tabs, and the enemy anchors' three.
+        for (int count : new int[] {AnchorsLayout.TAB_COUNT, AnchorsLayout.ENEMY_TAB_COUNT}) {
+            for (int index = 0; index < count; index++) {
+                AnchorsLayout.Rect tab = layout.tab(index, count);
+                String name = size + "tab " + index + "/" + count;
+                inside(name, tab, layout.tabs, failures);
+                if (tab.width() < AnchorsLayout.MIN_TAB_WIDTH || tab.height() < 12) {
+                    failures.add(name + " too small for its icon: " + tab);
+                }
+                if (index > 0 && tab.intersects(layout.tab(index - 1, count))) {
+                    failures.add(name + " overlaps the one before");
+                }
             }
         }
 

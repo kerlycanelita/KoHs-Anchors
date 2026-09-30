@@ -97,6 +97,12 @@ final class AnchorCube {
         this.pitch = 28.0F;
     }
 
+    /** Turns it to a set view: the battle's anchors each face the other side their own way. */
+    void setView(float yaw, float pitch) {
+        this.yaw = yaw;
+        this.pitch = Math.max(-80.0F, Math.min(80.0F, pitch));
+    }
+
     float yaw() {
         return this.yaw;
     }

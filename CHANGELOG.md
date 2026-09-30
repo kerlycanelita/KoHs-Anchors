@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — unreleased
+## 0.4.0 — 30 September 2026
 
 Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.2; see
 [the 0.4.0 notes](docs/research/anchors-0.4.0.md).
@@ -50,11 +50,15 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
   never drawn, the bloom steps down with distance, only the nearest anchors light their
   surroundings, and a vertex budget caps the frame: 64 charged anchors in view went from 353
   thousand vertices a frame to a fraction of that.
-- **Enemy anchors**: the ones that appear where you placed none glow in their own colour, with a page
-  of their own. Your placements are told apart by the server's acknowledgement of each click, so
-  another player reusing your hole right after you still counts as an enemy. Switching to their page
-  plays an animation (your anchor rises, the screen turns red, theirs takes its place, and back), and
-  the first time a window says what they are, with "Don't show again".
+- **Enemy anchors**: the ones that appear where you placed none glow in their own colour. Your
+  placements are told apart by the server's acknowledgement of each click, so another player reusing
+  your hole right after you still counts as an enemy. The header's switch turns the whole screen to
+  their side, in crimson, with three tabs of their own: **Glow** (whether they glow in their own
+  colour), **Colours** (that colour) and **Advanced**, which is still being made: "Coming soon" over
+  an endless battle, your anchors against theirs in three layers, throwing glowstone until the fifth
+  one sets an anchor off (a click throws one from your side). Switching plays an animation (your
+  anchor rises, the screen turns red, theirs takes its place, and back to the tab you left), and the
+  first time a window says what they are, with "Don't show again".
 
 ### Sounds (new tab)
 
@@ -75,8 +79,9 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
 
 ### KoHs (new tab)
 
-- Zymery Dria, who makes KoHs Anchor's, drawn as on the KoHs Mod Suite site and animated layer by
-  layer, with her aka, what she does, links to Discord, the site and Modrinth, and "KoHs on top".
+- Zymekoh (a.k.a. Kohzemyora), who makes KoHs Anchor's, drawn as on the KoHs Mod Suite site and
+  animated layer by layer, with her aka, what she does, links to Discord, the site and Modrinth, and
+  "KoHs on top".
 
 ### Advanced options and safety
 
@@ -88,7 +93,11 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
 
 ### Interface
 
-- Seven tabs; the anchor cycle time (last and best) in the session numbers.
+- Seven tabs, three on the enemy's side; the anchor cycle time (last and best) in the session
+  numbers.
+- The header's mark is a small Nether portal turning on itself, drawn pixel by pixel at the game's
+  own twenty frames a second, with the four charge lights riding its ring; crimson on the enemy's
+  side.
 - Faster settings screen: shapes drawn from many spans get a GUI stratum of their own, which had cost
   the screen half its frame rate.
 - `checkLayout` also checks the tabs, the glowstone guard window and the explaining windows at every
