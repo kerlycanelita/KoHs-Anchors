@@ -15,7 +15,7 @@ final class AnchorsLayout {
     static final int MAX_PANEL_HEIGHT = 380;
     /** Room on the right of the options for the scrollbar. */
     static final int SCROLL_GUTTER = 6;
-    static final int TAB_COUNT = 6;
+    static final int TAB_COUNT = 7;
     /** Below this a tab shows its icon only. */
     static final int MIN_TAB_WIDTH = 24;
 

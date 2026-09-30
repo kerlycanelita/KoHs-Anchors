@@ -33,7 +33,7 @@ import net.minecraft.util.Mth;
 
 /**
  * The KoHs Anchor's settings, in the Zymekoh style: black-purple glass over a transparent veil,
- * an anchor sigil turning slowly behind it, six tabs, and the 3D anchor inside its ritual circle
+ * an anchor sigil turning slowly behind it, seven tabs, and the 3D anchor inside its ritual circle
  * with this session's numbers.
  *
  * <ul>
@@ -48,6 +48,8 @@ import net.minecraft.util.Mth;
  *   mode, behind a blue one.</li>
  *   <li><b>Herzium</b>: Herzium's hotbar order and how the two mods talk ({@link HerziumWindow}
  *   explains both). Without Herzium the tab is dimmed and opens a window with where to get it.</li>
+ *   <li><b>KoHs</b>: who makes the mod, drawn as on the KoHs Mod Suite site, with links to
+ *   Discord, the site and Modrinth ({@link KohsPage}).</li>
  * </ul>
  *
  * <p>Geometry comes from {@link AnchorsLayout}. Every animation is timed in real time and moves
@@ -73,7 +75,8 @@ public final class AnchorsScreen extends Screen {
     static final int SOUNDS = 3;
     static final int ADVANCED = 4;
     static final int HERZIUM = 5;
-    private static final String[] TAB_KEYS = {"general", "anchor", "glow", "sounds", "advanced", "herzium"};
+    static final int KOHS = 6;
+    private static final String[] TAB_KEYS = {"general", "anchor", "glow", "sounds", "advanced", "herzium", "kohs"};
 
     /** Debounce stops: Vanilla, then one millisecond to ten seconds, finer at the short end. */
     static final int[] DEBOUNCE_STOPS = {0, 1, 2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50, 60, 75, 80, 100, 120, 150, 175,
@@ -122,6 +125,7 @@ public final class AnchorsScreen extends Screen {
     private AnchorsWarning warning;
     private GlowstoneGuardWarning guardWarning;
     private HerziumWindow herziumWindow;
+    private KohsPage kohsPage;
     private EnemyIntro enemyIntro;
     private EnemySwitch enemySwitch;
     /** The enemy's anchor, as the world draws it: on the enemy page and in the switch. */
@@ -198,6 +202,12 @@ public final class AnchorsScreen extends Screen {
                 this.workshop.enter(fromX, fromY);
             }
             this.workshop.layout(this.layout.body());
+            this.contentHeight = 0;
+        } else if (this.tab == KOHS) {
+            if (this.kohsPage == null) {
+                this.kohsPage = new KohsPage(settings().interfaceMotion, this);
+                this.kohsPage.enter();
+            }
             this.contentHeight = 0;
         } else {
             buildContent();
@@ -660,7 +670,7 @@ public final class AnchorsScreen extends Screen {
             }
             return;
         }
-        if (this.layout.showsPreview() && this.tab != ANCHOR) {
+        if (this.layout.showsPreview() && this.tab != ANCHOR && this.tab != KOHS) {
             this.previousPreviewX = this.previewArt.centerX();
             this.previousPreviewY = this.previewArt.y() + this.previewArt.height() / 2.0F;
         } else {
@@ -671,6 +681,8 @@ public final class AnchorsScreen extends Screen {
             this.workshop.close();
             this.workshop = null;
         }
+        // The KoHs page starts over each time its tab opens.
+        this.kohsPage = null;
         this.tab = index;
         lastTab = index;
         this.tabChangedAt = System.nanoTime();
@@ -698,7 +710,8 @@ public final class AnchorsScreen extends Screen {
     }
 
     private void startEnemySwitch(boolean toEnemy) {
-        AnchorsLayout.Rect from = this.layout.showsPreview() && this.tab != ANCHOR ? this.previewArt : AnchorsLayout.Rect.EMPTY;
+        AnchorsLayout.Rect from = this.layout.showsPreview() && this.tab != ANCHOR && this.tab != KOHS ? this.previewArt
+                : AnchorsLayout.Rect.EMPTY;
         this.enemySwitch = new EnemySwitch(toEnemy, settings().interfaceMotion, this.enemyFigure, from, () -> {
             switchPage(toEnemy);
             if (this.enemySwitch != null) {
@@ -716,6 +729,7 @@ public final class AnchorsScreen extends Screen {
                 this.workshop.close();
                 this.workshop = null;
             }
+            this.kohsPage = null;
             this.previousPreviewX = -1.0F;
             this.previousPreviewY = -1.0F;
             this.tab = GLOW;
@@ -848,6 +862,8 @@ public final class AnchorsScreen extends Screen {
         drawTabs(graphics, pointerX, pointerY, intro, seconds, frameMillis, motion);
         if (this.tab == ANCHOR && this.workshop != null) {
             this.workshop.render(graphics, this.font, pointerX, pointerY, motion, seconds, intro);
+        } else if (this.tab == KOHS && this.kohsPage != null) {
+            this.kohsPage.render(graphics, this.font, this.layout.body(), pointerX, pointerY, intro);
         } else {
             drawOptions(graphics, pointerX, pointerY, partialTick, now, motion, seconds);
             if (this.layout.showsPreview()) {
@@ -1250,6 +1266,17 @@ public final class AnchorsScreen extends Screen {
                     graphics.fill(barX, y + size - heights[bar], barX + 1, y + size, color);
                 }
             }
+            case KOHS -> {
+                // The KoHs mark: a diamond crossed by a blade.
+                for (int row = 0; row < size; row++) {
+                    int span = center - Math.abs(row - center);
+                    graphics.fill(x + center - span, y + row, x + center - span + 1, y + row + 1, color);
+                    graphics.fill(x + center + span, y + row, x + center + span + 1, y + row + 1, color);
+                }
+                for (int step = 1; step < size - 1; step++) {
+                    graphics.fill(x + size - 1 - step, y + step, x + size - step, y + step + 1, AnchorsTheme.fade(color, 0.7F));
+                }
+            }
             case HERZIUM -> {
                 // Speed lines running into an H, as on Herzium's own icon.
                 graphics.fill(x, y + 2, x + 3, y + 3, AnchorsTheme.fade(color, 0.55F));
@@ -1509,7 +1536,7 @@ public final class AnchorsScreen extends Screen {
         boolean armed = this.resetArmedAt >= 0L && System.nanoTime() - this.resetArmedAt < RESET_ARM_NANOS;
         String note = Component.translatable(armed ? "kohs_anchors.footer.note.reset"
                 : advanced ? "kohs_anchors.footer.note.advanced" : this.tab == ANCHOR ? "kohs_anchors.footer.note.anchor"
-                : "kohs_anchors.footer.note").getString();
+                : this.tab == KOHS ? "kohs_anchors.footer.note.kohs" : "kohs_anchors.footer.note").getString();
         int noteWidth = this.font.width(note);
         if (right - left < noteWidth) {
             return;
@@ -1588,6 +1615,10 @@ public final class AnchorsScreen extends Screen {
         }
         if (this.tab == ANCHOR && this.workshop != null) {
             if (this.workshop.mouseClicked(mouseX, mouseY, button)) {
+                return true;
+            }
+        } else if (this.tab == KOHS && this.kohsPage != null) {
+            if (this.kohsPage.mouseClicked(this.font, this.layout.body(), mouseX, mouseY, button)) {
                 return true;
             }
         } else {
@@ -1699,6 +1730,10 @@ public final class AnchorsScreen extends Screen {
         }
         if (this.soundPicker != null) {
             return this.soundPicker.mouseScrolled(verticalAmount);
+        }
+        if (this.tab == KOHS) {
+            // Nothing on the KoHs page scrolls.
+            return true;
         }
         if (this.tab == ANCHOR && this.workshop != null) {
             return this.workshop.mouseScrolled(mouseX, mouseY, verticalAmount);
@@ -1819,6 +1854,10 @@ public final class AnchorsScreen extends Screen {
 
     /** Defaults for the tab in view; the first press arms it, the second within 2.5 s applies it. */
     private void resetTab() {
+        if (this.tab == KOHS) {
+            // Nothing on the KoHs tab is a setting.
+            return;
+        }
         long now = System.nanoTime();
         if (this.resetArmedAt < 0L || now - this.resetArmedAt > RESET_ARM_NANOS) {
             this.resetArmedAt = now;
