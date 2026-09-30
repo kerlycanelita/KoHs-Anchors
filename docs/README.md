@@ -48,5 +48,5 @@ default settings.
   the mod relies on against each version's Minecraft bytecode.
 - `tools/build-all.ps1` (Windows) and `tools/build-all.sh` (Linux, macOS) do both for every
   version and fill `dist/<mod_version>/`.
-- A tag such as `v0.4.0` runs `tools/build-all.sh` on GitHub Actions and publishes the jars as a
-  release (`.github/workflows/release.yml`).
+- Publishing a release on GitHub, or pushing a tag such as `v0.4.0`, runs `tools/build-all.sh` on
+  GitHub Actions and attaches the jars to the release (`.github/workflows/release.yml`).

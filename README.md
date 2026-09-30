@@ -246,9 +246,10 @@ powershell -ExecutionPolicy Bypass -File tools\build-all.ps1
 
 builds every version, checks every Mixin target against that version's Minecraft bytecode
 (`tools/verify_mixin_targets.py`) and copies the jars with their checksums to
-`dist/<mod_version>/`. On Linux and macOS, `tools/build-all.sh` does the same. Pushing a tag such
-as `v0.4.0` runs it on GitHub Actions (`.github/workflows/release.yml`) and publishes the jars and
-their checksums as a release, with that version's changelog as its notes.
+`dist/<mod_version>/`. On Linux and macOS, `tools/build-all.sh` does the same. Publishing a
+release on GitHub (or pushing a tag such as `v0.4.0`) runs it on GitHub Actions
+(`.github/workflows/release.yml`) and attaches the jars and their checksums to the release, with
+that version's changelog as its notes when it has none.
 
 ## Repository layout
 

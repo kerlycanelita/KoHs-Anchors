@@ -1,15 +1,26 @@
 name: Release
 
-# Pushing a tag such as v0.4.0 builds KoHs Anchor's for every Minecraft version, checks every Mixin
-# target against that version's bytecode, and publishes the jars with their SHA-256 sums as a
-# GitHub release. The release notes are that version's section of CHANGELOG.md.
+# Builds KoHs Anchor's for every Minecraft version, checks every Mixin target against that
+# version's bytecode, and publishes the jars with their SHA-256 sums on a GitHub release:
+#
+# - publishing a release on GitHub (tag v0.4.0, say) adds the jars to it;
+# - pushing a tag such as v0.4.0 creates the release with them.
+#
+# A release without notes takes that version's section of CHANGELOG.md.
 on:
+  release:
+    types: [published]
   push:
     tags:
       - "v*"
 
 permissions:
   contents: write
+
+# A release published on a new tag also pushes the tag: the two runs take turns.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -42,10 +53,19 @@ jobs:
               | sed "s#](docs/#](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/#g" > notes.md
           test -s notes.md || echo "KoHs Anchor's ${version}." > notes.md
 
-      - name: Publish the release
+      - name: Publish the jars
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          gh release create "${GITHUB_REF_NAME}" dist/"${version}"/*.jar dist/"${version}"/CHECKSUMS.sha256 \
-              --title "KoHs Anchor's ${version}" --notes-file notes.md --verify-tag
+          tag="${GITHUB_REF_NAME}"
+          version="${tag#v}"
+          files=(dist/"${version}"/*.jar dist/"${version}"/CHECKSUMS.sha256)
+          if gh release view "${tag}" > /dev/null 2>&1; then
+            gh release upload "${tag}" "${files[@]}" --clobber
+            if [ -z "$(gh release view "${tag}" --json body --jq .body)" ]; then
+              gh release edit "${tag}" --notes-file notes.md
+            fi
+          else
+            gh release create "${tag}" "${files[@]}" --title "KoHs Anchor's ${version}" \
+                --notes-file notes.md --verify-tag
+          fi
