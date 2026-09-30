@@ -100,7 +100,7 @@ final class HerziumWindow {
     // ------------------------------------------------------------------------------------------
 
     boolean mouseClicked(Font font, int width, int height, double mouseX, double mouseY, int button) {
-        if (this.phase != Phase.OPEN || button != 0) {
+        if (this.phase != Phase.OPEN || button != Keys.LEFT_BUTTON) {
             return true;
         }
         AnchorsLayout.InfoModal modal = AnchorsLayout.infoModal(width, height);
@@ -135,15 +135,15 @@ final class HerziumWindow {
         if (this.phase != Phase.OPEN) {
             return true;
         }
-        if (key == 256) {
+        if (key == Keys.ESCAPE) {
             close();
-        } else if (key == 257 || key == 335) {
+        } else if (Keys.confirms(key)) {
             if (this.kind == Kind.MISSING) {
                 openModrinth();
             } else {
                 proceed();
             }
-        } else if (key == 32 && this.kind == Kind.GUIDE) {
+        } else if (key == Keys.SPACE && this.kind == Kind.GUIDE) {
             this.hide = !this.hide;
         }
         return true;

@@ -154,7 +154,7 @@ final class AnchorPreview {
     }
 
     boolean mouseClicked(AnchorsLayout.Rect area, double mouseX, double mouseY, int button, boolean doubleClick) {
-        if (!area.contains(mouseX, mouseY) || button != 0) {
+        if (!area.contains(mouseX, mouseY) || button != Keys.LEFT_BUTTON) {
             return false;
         }
         long now = System.nanoTime();

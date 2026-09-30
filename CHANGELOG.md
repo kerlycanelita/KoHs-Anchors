@@ -28,6 +28,11 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
 - The veil lifts after a wait that follows the connection (three round trips and a quarter second)
   instead of a fixed time.
 - **Explosion smoke** (new): Vanilla, one light puff, or none. Other explosions keep theirs.
+- Setting the spawn with a charged anchor in the Nether is no longer taken for a detonation. The rule
+  "anchors work here" is an environment attribute the game does not sync, so on 1.21.11 the client
+  read it as false even in the Nether: the use played an explosion's sound and flash, hid the anchor
+  until the server answered, and dropped the clicks that waited for it. The Nether's own dimension
+  type now says it too. Found by the lab's Nether test; wrong since 0.1.0.
 
 ### Anchor custom (new tab)
 
@@ -100,6 +105,10 @@ Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.
   side.
 - Faster settings screen: shapes drawn from many spans get a GUI stratum of their own, which had cost
   the screen half its frame rate.
+- On 26.3 the settings screen answers to the mouse and keyboard again: Minecraft numbers keys, buttons
+  and Ctrl with SDL's codes there (the left button is 1, Escape 41), and the screen compared GLFW's.
+  Every key and button now comes from the game's own constants, so each jar carries its version's
+  numbers.
 - `checkLayout` also checks the tabs, the glowstone guard window and the explaining windows at every
   size.
 - New icon. Every text in English and seven Spanish locales.

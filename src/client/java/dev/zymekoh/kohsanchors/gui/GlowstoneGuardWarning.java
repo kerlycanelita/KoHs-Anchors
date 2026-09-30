@@ -136,7 +136,7 @@ final class GlowstoneGuardWarning {
             close(now);
             return true;
         }
-        if (this.phase != Phase.WARNING || button != 0) {
+        if (this.phase != Phase.WARNING || button != Keys.LEFT_BUTTON) {
             return true;
         }
         AnchorsLayout.GuardModal modal = layout(font, width, height);
@@ -151,13 +151,13 @@ final class GlowstoneGuardWarning {
     /** Escape cancels (or skips the charge); Enter turns it on once the warning has been read. */
     boolean keyPressed(int key) {
         long now = System.nanoTime();
-        if (key == 256) {
+        if (key == Keys.ESCAPE) {
             if (this.phase == Phase.WARNING) {
                 cancel(now);
             } else if (this.phase == Phase.CHARGE) {
                 close(now);
             }
-        } else if ((key == 257 || key == 335) && ready(now)) {
+        } else if (Keys.confirms(key) && ready(now)) {
             confirm(now);
         }
         return true;

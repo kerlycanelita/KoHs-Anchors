@@ -1704,7 +1704,7 @@ public final class AnchorsScreen extends Screen {
             this.popover.mouseClicked(mouseX, mouseY, button);
             return true;
         }
-        if (button == 0 && this.enemySwitchWidth > 0 && mouseX >= this.enemySwitchX
+        if (button == Keys.LEFT_BUTTON && this.enemySwitchWidth > 0 && mouseX >= this.enemySwitchX
                 && mouseX < this.enemySwitchX + this.enemySwitchWidth && mouseY >= this.enemySwitchY
                 && mouseY < this.enemySwitchY + 13) {
             toggleEnemyAnchors();
@@ -1712,7 +1712,7 @@ public final class AnchorsScreen extends Screen {
         }
         int[] tabs = visibleTabs();
         for (int slot = 0; slot < tabs.length; slot++) {
-            if (button == 0 && this.layout.tab(slot, tabs.length).contains(mouseX, mouseY)) {
+            if (button == Keys.LEFT_BUTTON && this.layout.tab(slot, tabs.length).contains(mouseX, mouseY)) {
                 selectTab(tabs[slot]);
                 return true;
             }
@@ -1733,7 +1733,7 @@ public final class AnchorsScreen extends Screen {
             if (this.enemyPicker != null && this.enemyPicker.mouseClicked(mouseX, mouseY, button)) {
                 return true;
             }
-            if (button == 0) {
+            if (button == Keys.LEFT_BUTTON) {
                 for (AnchorRow row : this.rows) {
                     if (row instanceof AnchorSliderRow slider && slider.trackContains(mouseX, mouseY)) {
                         this.draggingSlider = slider;
@@ -1743,7 +1743,7 @@ public final class AnchorsScreen extends Screen {
                 }
             }
             if (enemyPage) {
-                if (button == 0 && this.previewArt.contains(mouseX, mouseY)) {
+                if (button == Keys.LEFT_BUTTON && this.previewArt.contains(mouseX, mouseY)) {
                     this.figureDragging = true;
                     this.figureDragDistance = 0.0D;
                     return true;
@@ -1869,7 +1869,7 @@ public final class AnchorsScreen extends Screen {
             return this.enemyIntro.keyPressed(key);
         }
         if (this.enemySwitch != null) {
-            if (key == 256) {
+            if (key == Keys.ESCAPE) {
                 this.enemySwitch.skip();
                 this.enemySwitch = null;
             }
@@ -1888,7 +1888,7 @@ public final class AnchorsScreen extends Screen {
             return this.soundPicker.keyPressed(key);
         }
         if (this.popover != null) {
-            if (!this.popover.keyPressed(key) && (key == 256 || key == 257 || key == 335)) {
+            if (!this.popover.keyPressed(key) && (key == Keys.ESCAPE || Keys.confirms(key))) {
                 this.popover = null;
                 AnchorsConfig.save();
             }
@@ -1898,10 +1898,10 @@ public final class AnchorsScreen extends Screen {
             return true;
         }
         if (this.tab == ANCHOR && this.workshop != null
-                && this.workshop.keyPressed(key, (event.modifiers() & 2) != 0)) {
+                && this.workshop.keyPressed(key, (event.modifiers() & Keys.CONTROL) != 0)) {
             return true;
         }
-        if (key == 301 && dev()) {
+        if (key == Keys.F12 && dev()) {
             // F12, as in a browser, shows and hides the inspector while developer mode is on.
             DevInspector.toggle();
             return true;

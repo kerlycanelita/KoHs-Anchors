@@ -156,7 +156,7 @@ final class SoundPicker {
     }
 
     boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button != 0) {
+        if (button != Keys.LEFT_BUTTON) {
             return true;
         }
         if (this.done.contains(mouseX, mouseY) || !this.box.contains(mouseX, mouseY)) {
@@ -180,9 +180,9 @@ final class SoundPicker {
     }
 
     boolean keyPressed(int key) {
-        if (key == 256 || key == 257 || key == 335) {
+        if (key == Keys.ESCAPE || Keys.confirms(key)) {
             this.closed = true;
-        } else if (key == 259 && !this.query.isEmpty()) {
+        } else if (key == Keys.BACKSPACE && !this.query.isEmpty()) {
             this.query = this.query.substring(0, this.query.length() - 1);
             filter();
         }

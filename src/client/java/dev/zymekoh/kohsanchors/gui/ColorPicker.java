@@ -188,7 +188,7 @@ final class ColorPicker {
     }
 
     boolean mouseClicked(double mouseX, double mouseY, int button) {
-        if (button != 0 || !this.area.contains(mouseX, mouseY) && !inHue(mouseX, mouseY)) {
+        if (button != Keys.LEFT_BUTTON || !this.area.contains(mouseX, mouseY) && !inHue(mouseX, mouseY)) {
             if (this.editingHex) {
                 commitHex();
             }
@@ -251,11 +251,11 @@ final class ColorPicker {
         if (!this.editingHex) {
             return false;
         }
-        if (key == 257 || key == 335) {
+        if (Keys.confirms(key)) {
             commitHex();
-        } else if (key == 256) {
+        } else if (key == Keys.ESCAPE) {
             this.editingHex = false;
-        } else if (key == 259 && !this.hexText.isEmpty()) {
+        } else if (key == Keys.BACKSPACE && !this.hexText.isEmpty()) {
             this.hexText = this.hexText.substring(0, this.hexText.length() - 1);
         }
         return true;

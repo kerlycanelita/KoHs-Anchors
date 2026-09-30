@@ -109,22 +109,22 @@ final class AnchorSliderRow extends AnchorRow {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key();
-        if (key == 263 || key == 264) {
+        if (key == Keys.LEFT || key == Keys.DOWN) {
             select(index() - 1);
             release();
             return true;
         }
-        if (key == 262 || key == 265) {
+        if (key == Keys.RIGHT || key == Keys.UP) {
             select(index() + 1);
             release();
             return true;
         }
-        if (key == 268) {
+        if (key == Keys.HOME) {
             select(0);
             release();
             return true;
         }
-        if (key == 269) {
+        if (key == Keys.END) {
             select(this.stops.length - 1);
             release();
             return true;

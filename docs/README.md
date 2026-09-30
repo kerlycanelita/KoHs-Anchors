@@ -33,7 +33,7 @@ default settings.
 | `glow` | The anchor glow: emissive pixels, bloom geometry, the light on the surroundings, and the tracker that tells your anchors from the enemy's. |
 | `skin` | The anchor's skin: reading the atlas, the colours and pixel paint of each layer, mipmaps. |
 | `sound` | The replaced charge and explosion sounds. |
-| `integration` | Herzium (hotbar order and communication) and KoHs Crystal Tweaks (colours), both by reflection or file reads, never a compile-time dependency. |
+| `integration` | Herzium (hotbar order and communication) and KoHs Crystal Tweaks (colours), both by reflection or file reads, never a compile-time dependency; the Mixin plugin that leaves out Sodium's Mixin when Sodium is not installed. |
 | `safety` | Where the not secure options may act. |
 | `video` | The safe anchor clip, decoded with JCodec on a background thread. |
 | `mixin` | The hooks: `handleKeybinds`, `KeyMapping.click`, `useItemOn`, `useWithoutItem`, `handleExplosion`, `setServerVerifiedBlockState`, `handleBlockChangedAck`, the block light engine, the chunk meshes and the level renderer. |

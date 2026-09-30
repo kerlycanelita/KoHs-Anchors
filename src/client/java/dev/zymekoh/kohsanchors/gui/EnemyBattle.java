@@ -567,7 +567,7 @@ final class EnemyBattle {
 
     /** A click on the battlefield: the player's general throws a glowstone at the enemy's. */
     boolean mouseClicked(AnchorsLayout.Rect body, double mouseX, double mouseY, int button) {
-        if (button != 0 || !body.contains(mouseX, mouseY)) {
+        if (button != Keys.LEFT_BUTTON || !body.contains(mouseX, mouseY)) {
             return false;
         }
         Fighter general = this.ownGeneral;

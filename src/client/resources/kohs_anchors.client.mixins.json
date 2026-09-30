@@ -3,6 +3,7 @@
   "minVersion": "0.8",
   "package": "dev.zymekoh.kohsanchors.mixin",
   "compatibilityLevel": "JAVA_25",
+  "plugin": "dev.zymekoh.kohsanchors.integration.OptionalMixins",
   "client": [
     "AnimationStateAccessor",
     "BlockLightEngineMixin",

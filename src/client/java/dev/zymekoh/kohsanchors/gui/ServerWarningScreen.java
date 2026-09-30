@@ -171,7 +171,7 @@ public final class ServerWarningScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
-        if (event.button() != 0 || this.closingAt >= 0L) {
+        if (event.button() != Keys.LEFT_BUTTON || this.closingAt >= 0L) {
             return true;
         }
         AnchorsLayout.Modal modal = AnchorsLayout.modal(this.width, this.height);
@@ -192,7 +192,7 @@ public final class ServerWarningScreen extends Screen {
 
     @Override
     public boolean keyPressed(KeyEvent event) {
-        if (event.key() == 256 || event.key() == 257 || event.key() == 335) {
+        if (event.key() == Keys.ESCAPE || Keys.confirms(event.key())) {
             // Escape and Enter both keep the options off: allowing takes the deliberate hold.
             close();
             return true;

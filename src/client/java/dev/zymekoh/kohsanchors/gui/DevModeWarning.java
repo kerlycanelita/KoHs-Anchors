@@ -57,7 +57,7 @@ final class DevModeWarning {
             close(now);
             return true;
         }
-        if (this.phase != Phase.WARNING || button != 0) {
+        if (this.phase != Phase.WARNING || button != Keys.LEFT_BUTTON) {
             return true;
         }
         AnchorsLayout.Modal modal = AnchorsLayout.modal(width, height);
@@ -71,9 +71,9 @@ final class DevModeWarning {
 
     boolean keyPressed(int key) {
         long now = System.nanoTime();
-        if (key == 256) {
+        if (key == Keys.ESCAPE) {
             close(now);
-        } else if ((key == 257 || key == 335) && this.phase == Phase.WARNING && now - this.openedAt >= READ_NANOS) {
+        } else if (Keys.confirms(key) && this.phase == Phase.WARNING && now - this.openedAt >= READ_NANOS) {
             confirm(now);
         }
         return true;

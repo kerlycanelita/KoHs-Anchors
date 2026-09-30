@@ -227,7 +227,7 @@ final class KohsPage {
     // ------------------------------------------------------------------------------------------
 
     boolean mouseClicked(Font font, AnchorsLayout.Rect body, double mouseX, double mouseY, int button) {
-        if (button != 0) {
+        if (button != Keys.LEFT_BUTTON) {
             return false;
         }
         Parts parts = parts(font, body);

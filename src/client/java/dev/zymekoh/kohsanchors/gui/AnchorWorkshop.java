@@ -550,7 +550,7 @@ final class AnchorWorkshop {
         if (this.picker.mouseClicked(mouseX, mouseY, button)) {
             return true;
         }
-        if (button == 0) {
+        if (button == Keys.LEFT_BUTTON) {
             for (int index = this.hits.size() - 1; index >= 0; index--) {
                 Hit hit = this.hits.get(index);
                 if (hit.contains(mouseX, mouseY)) {
@@ -570,7 +570,7 @@ final class AnchorWorkshop {
         if (!stage.contains(mouseX, mouseY)) {
             return false;
         }
-        if (button == 0 && this.mode == Mode.PIXELS) {
+        if (button == Keys.LEFT_BUTTON && this.mode == Mode.PIXELS) {
             int[] picked = this.cube.pick(mouseX, mouseY);
             if (picked != null) {
                 this.painting = true;
@@ -581,7 +581,7 @@ final class AnchorWorkshop {
                 return true;
             }
         }
-        if (button == 0 || button == 1) {
+        if (button == Keys.LEFT_BUTTON || button == Keys.RIGHT_BUTTON) {
             this.rotating = true;
             return true;
         }
@@ -640,11 +640,11 @@ final class AnchorWorkshop {
         if (this.picker.keyPressed(key)) {
             return true;
         }
-        if (control && key == 90) {
+        if (control && key == Keys.Z) {
             undo();
             return true;
         }
-        if (control && key == 89) {
+        if (control && key == Keys.Y) {
             redo();
             return true;
         }

@@ -85,7 +85,7 @@ final class AnchorsWarning {
     // ------------------------------------------------------------------------------------------
 
     boolean mouseClicked(int width, int height, double mouseX, double mouseY, int button) {
-        if (button != 0) {
+        if (button != Keys.LEFT_BUTTON) {
             return true;
         }
         long now = System.nanoTime();
@@ -124,7 +124,7 @@ final class AnchorsWarning {
     /** Escape cancels; Enter confirms once the warning has been read. */
     boolean keyPressed(int key) {
         long now = System.nanoTime();
-        if (key == 256) {
+        if (key == Keys.ESCAPE) {
             if (this.phase == Phase.WARNING || this.phase == Phase.SECOND) {
                 cancel(now);
             } else if (this.phase == Phase.RITUAL) {
@@ -133,7 +133,7 @@ final class AnchorsWarning {
             return true;
         }
         // Enter only moves past the first warning; the second takes the held button.
-        if ((key == 257 || key == 335) && readyToConfirm(now)) {
+        if (Keys.confirms(key) && readyToConfirm(now)) {
             toSecond(now);
             return true;
         }

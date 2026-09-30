@@ -77,7 +77,7 @@ final class CrystalModal {
 
     boolean mouseClicked(int width, int height, double mouseX, double mouseY, int button) {
         long now = System.nanoTime();
-        if (button != 0) {
+        if (button != Keys.LEFT_BUTTON) {
             return true;
         }
         if (this.phase == Phase.LOADING) {
@@ -112,7 +112,7 @@ final class CrystalModal {
     }
 
     boolean keyPressed(int key) {
-        if (key == 256) {
+        if (key == Keys.ESCAPE) {
             close(System.nanoTime());
         }
         return true;

@@ -26,6 +26,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.dimension.BuiltinDimensionTypes;
 import net.minecraft.world.phys.Vec3;
 
 /**
@@ -215,10 +216,20 @@ public final class DetonationPredictor {
         return !(off.is(Items.GLOWSTONE) && chargeable);
     }
 
-    /** Whether anchors set the spawn point here, so a use never explodes one. */
+    /**
+     * Whether anchors set the spawn point here, so a use never explodes one.
+     *
+     * <p>The server decides with the {@code respawn_anchor_works} environment attribute, which is
+     * not one the game syncs: a client that builds its dimensions from the server's registry data
+     * reads it as false everywhere, and 1.21.11 does, in singleplayer too. Read alone it made a
+     * set-spawn use in the Nether look like a detonation. So the Nether's own dimension type, which
+     * servers' extra Nether worlds share, says it as well; the attribute still counts where the
+     * client has it.</p>
+     */
     public static boolean anchorsWork(ClientLevel level, BlockPos position) {
-        return Boolean.TRUE.equals(level.environmentAttributes().getValue(EnvironmentAttributes.RESPAWN_ANCHOR_WORKS,
-                position));
+        return level.dimensionTypeRegistration().is(BuiltinDimensionTypes.NETHER) || level.dimension() == Level.NETHER
+                || Boolean.TRUE.equals(level.environmentAttributes().getValue(EnvironmentAttributes.RESPAWN_ANCHOR_WORKS,
+                        position));
     }
 
     /** Runs {@code use} as a use whose outcome the caller has already shown. */
