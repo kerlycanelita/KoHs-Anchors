@@ -1,0 +1,51 @@
+name: Release
+
+# Pushing a tag such as v0.4.0 builds KoHs Anchor's for every Minecraft version, checks every Mixin
+# target against that version's bytecode, and publishes the jars with their SHA-256 sums as a
+# GitHub release. The release notes are that version's section of CHANGELOG.md.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build every Minecraft version and check its Mixin targets
+        run: bash tools/build-all.sh
+
+      - name: Notes from the changelog
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # The changelog's links are relative to the repository; a release page needs them whole.
+          awk -v heading="## ${version} " 'index($0, heading) == 1 { found = 1; next }
+              found && /^## / { exit }
+              found { print }' CHANGELOG.md \
+              | sed "s#](docs/#](https://github.com/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/docs/#g" > notes.md
+          test -s notes.md || echo "KoHs Anchor's ${version}." > notes.md
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          gh release create "${GITHUB_REF_NAME}" dist/"${version}"/*.jar dist/"${version}"/CHECKSUMS.sha256 \
+              --title "KoHs Anchor's ${version}" --notes-file notes.md --verify-tag
