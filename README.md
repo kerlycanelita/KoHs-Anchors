@@ -23,7 +23,7 @@ it in the shape Vanilla sends it, and never adds a click of its own.
 On top of that, 0.4.0 lets you make the anchor yours: paint it, light it, give the enemy's anchors
 their own colour and pick the sounds you hear.
 
-> **Status: 0.4.0, development build.** Measured on Minecraft 26.2 against a local server with
+> **Status: 0.4.0.** Measured on Minecraft 26.2 against a local server with
 > Grim Anticheat (see below). Every other version compiles and has each Mixin target checked
 > against its bytecode, but only 26.2 has been played.
 
