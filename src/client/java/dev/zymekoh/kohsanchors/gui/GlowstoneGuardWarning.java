@@ -647,7 +647,7 @@ final class GlowstoneGuardWarning {
     }
 
     /** Streaks trailing behind something moving to the right. */
-    private static void speedTrail(GuiGraphicsExtractor graphics, int tailX, int centerY, int size, double seconds, float alpha,
+    static void speedTrail(GuiGraphicsExtractor graphics, int tailX, int centerY, int size, double seconds, float alpha,
             int color) {
         for (int streak = 0; streak < 5; streak++) {
             int streakY = centerY - size / 3 + streak * size / 6;
@@ -660,7 +660,7 @@ final class GlowstoneGuardWarning {
         }
     }
 
-    private static void sparks(GuiGraphicsExtractor graphics, int centerX, int centerY, int size, float progress, int color,
+    static void sparks(GuiGraphicsExtractor graphics, int centerX, int centerY, int size, float progress, int color,
             int count) {
         if (progress < 0.0F || progress >= 1.0F) {
             return;
@@ -677,7 +677,7 @@ final class GlowstoneGuardWarning {
     }
 
     /** The detonation: a short local flash, three shockwaves, sparks and falling debris. */
-    private static void drawBlast(GuiGraphicsExtractor graphics, int centerX, int centerY, int size, int stageWidth,
+    static void drawBlast(GuiGraphicsExtractor graphics, int centerX, int centerY, int size, int stageWidth,
             float since) {
         float wave = AnchorsTheme.clamp01(since / 0.55F);
         if (wave >= 1.0F) {

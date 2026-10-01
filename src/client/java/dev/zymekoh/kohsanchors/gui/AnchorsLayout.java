@@ -15,7 +15,7 @@ final class AnchorsLayout {
     static final int MAX_PANEL_HEIGHT = 380;
     /** Room on the right of the options for the scrollbar. */
     static final int SCROLL_GUTTER = 6;
-    static final int TAB_COUNT = 7;
+    static final int TAB_COUNT = 8;
     /** The enemy anchors' tabs: glow, colours and advanced. */
     static final int ENEMY_TAB_COUNT = 3;
     /** Below this a tab shows its icon only. */
@@ -133,9 +133,9 @@ final class AnchorsLayout {
         return tab(index, TAB_COUNT);
     }
 
-    /** One of {@code count} tabs sharing the bar, a 3px gap between two. */
+    /** One of {@code count} tabs sharing the bar, a 3px gap between two (2px when the bar is narrow). */
     Rect tab(int index, int count) {
-        int gap = 3;
+        int gap = (this.tabs.width() - 3 * (count - 1)) / count >= MIN_TAB_WIDTH ? 3 : 2;
         int width = (this.tabs.width() - gap * (count - 1)) / count;
         return new Rect(this.tabs.x() + index * (width + gap), this.tabs.y(), Math.max(0, width), this.tabs.height());
     }

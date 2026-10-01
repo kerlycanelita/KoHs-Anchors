@@ -1,19 +1,27 @@
 package dev.zymekoh.kohsanchors.predict;
 
+import dev.zymekoh.kohsanchors.bridge.BridgeClient;
+import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.multiplayer.PlayerInfo;
 
 /**
- * How long the server takes to answer, for the waits that depend on it. The player list's latency
- * is what the server itself measured for this player; singleplayer and a fresh connection read 0.
+ * How long the server takes to answer, for the waits that depend on it. With a server's bridge and
+ * "real latency" on, it is the round trip the bridge's pings measure, once a second; otherwise the
+ * player list's latency, which the server measures and sends every few seconds. Singleplayer and a
+ * fresh connection read 0.
  */
 public final class Latency {
     private Latency() {
     }
 
-    /** The round trip the server last measured for this player, in milliseconds. */
+    /** The round trip to the server, in milliseconds. */
     public static int millis() {
+        float bridge = BridgeClient.roundTripMillis();
+        if (bridge >= 0.0F && AnchorsConfig.settings().bridgeLatency) {
+            return Math.round(bridge);
+        }
         Minecraft minecraft = Minecraft.getInstance();
         ClientPacketListener connection = minecraft.getConnection();
         if (connection == null || minecraft.player == null) {

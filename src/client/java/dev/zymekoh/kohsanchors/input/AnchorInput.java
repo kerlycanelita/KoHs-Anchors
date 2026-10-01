@@ -2,6 +2,7 @@ package dev.zymekoh.kohsanchors.input;
 
 import com.mojang.blaze3d.platform.InputConstants;
 import dev.zymekoh.kohsanchors.compat.Mc;
+import dev.zymekoh.kohsanchors.bridge.BridgeClient;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
 import dev.zymekoh.kohsanchors.glow.AnchorTracker;
@@ -215,7 +216,7 @@ public final class AnchorInput {
         AnchorVeil.tick(minecraft);
         DetonationPredictor.tick(minecraft);
         AnchorDebounce.tick(minecraft);
-        ServerLock.tick(minecraft);
+        BridgeClient.tick(minecraft);
         AtlasSkin.tick(minecraft);
         AnchorTracker.tick(minecraft);
         if (minecraft.level != null) {

@@ -1,5 +1,6 @@
 package dev.zymekoh.kohsanchors;
 
+import dev.zymekoh.kohsanchors.bridge.BridgeClient;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import net.fabricmc.api.ClientModInitializer;
 import org.slf4j.Logger;
@@ -12,5 +13,6 @@ public final class KoHsAnchorsClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         AnchorsConfig.load();
+        BridgeClient.init();
     }
 }

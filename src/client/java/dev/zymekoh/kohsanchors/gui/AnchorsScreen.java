@@ -1,6 +1,8 @@
 package dev.zymekoh.kohsanchors.gui;
 
 import dev.zymekoh.kohsanchors.KoHsAnchorsClient;
+import dev.zymekoh.kohsanchors.bridge.BridgeClient;
+import dev.zymekoh.kohsanchors.bridge.BridgeProtocol;
 import dev.zymekoh.kohsanchors.compat.Mc;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
@@ -13,6 +15,7 @@ import dev.zymekoh.kohsanchors.safety.ServerLock;
 import dev.zymekoh.kohsanchors.skin.ColorMath;
 import dev.zymekoh.kohsanchors.skin.SkinPaint;
 import dev.zymekoh.kohsanchors.sound.AnchorSounds;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -23,6 +26,7 @@ import java.util.function.IntSupplier;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.events.GuiEventListener;
+import net.minecraft.client.gui.screens.ConfirmLinkScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.input.CharacterEvent;
 import net.minecraft.client.input.KeyEvent;
@@ -33,7 +37,7 @@ import net.minecraft.util.Mth;
 
 /**
  * The KoHs Anchor's settings, in the Zymekoh style: black-purple glass over a transparent veil,
- * an anchor sigil turning slowly behind it, seven tabs, and the 3D anchor inside its ritual circle
+ * an anchor sigil turning slowly behind it, eight tabs, and the 3D anchor inside its ritual circle
  * with this session's numbers.
  *
  * <ul>
@@ -44,18 +48,26 @@ import net.minecraft.util.Mth;
  *   <li><b>Glow</b>: the light a charged anchor gives off, and the enemy anchors' colour on a page
  *   of its own.</li>
  *   <li><b>Sounds</b>: the charge and explosion sounds.</li>
- *   <li><b>Advanced</b>: the not secure options, crimson, each behind two warnings, and developer
- *   mode, behind a blue one.</li>
+ *   <li><b>Anchors Server</b>: the server's bridge. Entering it checks the server with a falling
+ *   anchor ({@link ServerCheckWindow}): green into the column when a bridge answers, red under a
+ *   padlock when none does. Then the anchor chain options the bridge allows and what it adds, each
+ *   played once when switched on ({@link OptionFx}).</li>
+ *   <li><b>Advanced</b>: developer mode, in a deeper purple.</li>
  *   <li><b>Herzium</b>: Herzium's hotbar order and how the two mods talk ({@link HerziumWindow}
  *   explains both). Without Herzium the tab is dimmed and opens a window with where to get it.</li>
  *   <li><b>KoHs</b>: who makes the mod, drawn as on the KoHs Mod Suite site, with links to
  *   Discord, the site and Modrinth ({@link KohsPage}).</li>
  * </ul>
  *
- * <p>The header's switch turns the whole screen to the enemy's anchors, in crimson, with three tabs
- * of their own: <b>Glow</b> (whether they glow in their own colour), <b>Colours</b> (that colour)
- * and <b>Advanced</b>, which is still being made and shows a battle between the two sides
- * ({@link EnemyBattle}). The switch back returns to the tab the player left.</p>
+ * <p>The header's switch turns the whole screen to the enemy's anchors, in crimson. While enemy
+ * anchors are off the page is only their switch and their red anchor under it; switched on, the
+ * anchor flies into its column ({@link EnemyReveal}) and three tabs of their own are dealt in:
+ * <b>Glow</b>, <b>Colours</b> (their colour) and <b>Advanced</b>, which is still being made and
+ * shows a battle between the two sides ({@link EnemyBattle}). The switch back returns to the tab the
+ * player left.</p>
+ *
+ * <p>The first time the screen opens, an anchor charges and explodes into anchors and glowstone,
+ * and two windows say what the mod is and what its server bridge adds ({@link EntrySequence}).</p>
  *
  * <p>Geometry comes from {@link AnchorsLayout}. Every animation is timed in real time and moves
  * only decoration: rows fade in but are always where their hitboxes are, and the scrolling area
@@ -78,17 +90,21 @@ public final class AnchorsScreen extends Screen {
     static final int ANCHOR = 1;
     static final int GLOW = 2;
     static final int SOUNDS = 3;
-    static final int ADVANCED = 4;
-    static final int HERZIUM = 5;
-    static final int KOHS = 6;
-    static final int ENEMY_GLOW = 7;
-    static final int ENEMY_COLOURS = 8;
-    static final int ENEMY_ADVANCED = 9;
-    private static final String[] TAB_KEYS = {"general", "anchor", "glow", "sounds", "advanced", "herzium", "kohs",
+    static final int SERVER = 4;
+    static final int ADVANCED = 5;
+    static final int HERZIUM = 6;
+    static final int KOHS = 7;
+    static final int ENEMY_GLOW = 8;
+    static final int ENEMY_COLOURS = 9;
+    static final int ENEMY_ADVANCED = 10;
+    private static final String[] TAB_KEYS = {"general", "anchor", "glow", "sounds", "server", "advanced", "herzium", "kohs",
             "enemy_glow", "enemy_colours", "enemy_advanced"};
-    /** The tab bar of each side: the player's seven tabs, the enemy anchors' three. */
-    private static final int[] OWN_TABS = {GENERAL, ANCHOR, GLOW, SOUNDS, ADVANCED, HERZIUM, KOHS};
+    /** The tab bar of each side: the player's eight tabs, the enemy anchors' three, none while theirs are off. */
+    private static final int[] OWN_TABS = {GENERAL, ANCHOR, GLOW, SOUNDS, SERVER, ADVANCED, HERZIUM, KOHS};
     private static final int[] ENEMY_TABS = {ENEMY_GLOW, ENEMY_COLOURS, ENEMY_ADVANCED};
+    private static final int[] NO_TABS = {};
+    /** The connection the server check last ran for: it runs again on another server. */
+    private static Object checkedFor = new Object();
     private static final long TAB_DEAL_NANOS = 300_000_000L;
     private static final long TAB_DEAL_STAGGER_NANOS = 55_000_000L;
 
@@ -125,8 +141,6 @@ public final class AnchorsScreen extends Screen {
     private int enemySwitchY;
     private int enemySwitchWidth;
     private int statsOffset = -1;
-    private int bannerOffset = -1;
-    private int bannerHeight;
     private int contentHeight;
     private int maxScroll;
     private float scroll;
@@ -141,7 +155,18 @@ public final class AnchorsScreen extends Screen {
     private float previousPreviewY = -1.0F;
 
     private AnchorWorkshop workshop;
-    private AnchorsWarning warning;
+    private ServerCheckWindow serverCheck;
+    private EntrySequence entry;
+    private boolean entryStarted;
+    private EnemyReveal enemyReveal;
+    private OptionFx optionFx;
+    /** The bridge's anchor in the Anchors Server tab: green with a bridge, red and locked without. */
+    private final AnchorFigure bridgeFigure = new AnchorFigure("bridge");
+    private BridgeClient.State shownBridgeState;
+    /** When "Switch to enemy Anchor's" started calling attention to itself, after the first entry. */
+    private long switchHighlightAt = -1L;
+    private boolean highlightSwitch;
+    private float enemyOffHover;
     private GlowstoneGuardWarning guardWarning;
     private HerziumWindow herziumWindow;
     private KohsPage kohsPage;
@@ -192,6 +217,17 @@ public final class AnchorsScreen extends Screen {
         long now = System.nanoTime();
         if (this.openedAt == 0L) {
             this.openedAt = now;
+        }
+        if (!this.entryStarted) {
+            this.entryStarted = true;
+            AnchorsConfig.Settings startup = settings();
+            if (startup.interfaceMotion || !startup.entryAccepted) {
+                this.highlightSwitch = !startup.entryAccepted;
+                this.entry = new EntrySequence(startup.interfaceMotion, startup.entryAccepted, this::openLink, () -> {
+                    settings().entryAccepted = true;
+                    AnchorsConfig.save();
+                });
+            }
         }
         this.lastFrame = now;
         this.saved = false;
@@ -245,9 +281,13 @@ public final class AnchorsScreen extends Screen {
                 this.battle = new EnemyBattle(settings().interfaceMotion);
             }
             this.contentHeight = 0;
+        } else if (enemyOff()) {
+            // Enemy anchors off: their page is only the switch and their anchor, drawn by the screen.
+            this.contentHeight = 0;
         } else {
             buildContent();
         }
+        this.shownBridgeState = BridgeClient.state();
 
         this.maxScroll = Math.max(0, this.contentHeight - this.layout.options.height());
         this.scrollTarget = Mth.clamp(this.scrollTarget, 0.0F, this.maxScroll);
@@ -266,12 +306,12 @@ public final class AnchorsScreen extends Screen {
 
     private void buildContent() {
         int offset = 0;
-        this.bannerOffset = -1;
         switch (this.tab) {
             case GENERAL -> offset = buildGeneral(offset);
             case GLOW -> offset = buildGlow(offset);
             case SOUNDS -> offset = buildSounds(offset);
             case HERZIUM -> offset = buildHerzium(offset);
+            case SERVER -> offset = buildServer(offset);
             case ENEMY_GLOW -> offset = buildEnemyGlow(offset);
             case ENEMY_COLOURS -> offset = buildEnemyColours(offset);
             default -> offset = buildAdvanced(offset);
@@ -415,14 +455,17 @@ public final class AnchorsScreen extends Screen {
      */
     private int buildEnemyGlow(int offset) {
         AnchorsConfig.EnemyGlow enemy = settings().enemyGlow;
+        // The switch comes first: off, the page goes back to it alone.
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("enemy_enabled"),
+                description("enemy_enabled"), this.font, () -> enemy.enabled, () -> setEnemyAnchors(!enemy.enabled), false, null,
+                "enemy_enabled", "EnemyGlow.enabled · off: the page is only this switch (EnemyReveal)",
+                "tracked " + AnchorTracker.count() + " · enemies " + AnchorTracker.enemyCount()));
         offset = note(offset, "enemy_about", () -> Component.translatable("kohs_anchors.enemy.badge").getString()
                         + " " + AnchorTracker.enemyCount(), AnchorsTheme.CRIMSON_BRIGHT,
                 "AnchorTracker.ENEMY: a new anchor where no own placement is in flight",
                 "ownPlacement ← MultiPlayerGameModeMixin @ useItemOn RETURN (sequence stamped)",
-                "OWN_PENDING until ClientLevelServerStateMixin @ handleBlockChangedAck");
+                "with a bridge: BridgeClient OWNER → AnchorTracker.serverOwner");
         offset = section(offset, "kohs_anchors.section.enemy_glow");
-        offset = toggle(offset, "enemy_enabled", () -> enemy.enabled, value -> enemy.enabled = value,
-                "EnemyGlow.enabled", "tracked " + AnchorTracker.count() + " · enemies " + AnchorTracker.enemyCount());
         offset = note(offset, "enemy_follows", () -> {
             AnchorsConfig.Glow glow = settings().glow;
             return Component.translatable(!glow.enabled ? "kohs_anchors.state.off" : switch (glow.quality) {
@@ -527,20 +570,10 @@ public final class AnchorsScreen extends Screen {
 
     private int buildAdvanced(int offset) {
         AnchorsConfig.Settings settings = settings();
-        this.bannerOffset = offset;
-        this.bannerHeight = bannerHeightFor(this.layout.rowWidth());
-        offset += this.bannerHeight + SECTION_GAP;
         offset = section(offset, "kohs_anchors.section.advanced");
-        offset = dangerRow(offset, "fast_chain", () -> settings.fastChain, value -> settings.fastChain = value,
-                "FastChain.decide ← AnchorInput.decide", "predictions drawn by AnchorVeil",
-                "gated by ServerLock.fastChain()");
-        offset = dangerRow(offset, "instant_detonation", () -> settings.instantDetonation,
-                value -> settings.instantDetonation = value, "AnchorInput.afterKeyClicked ← KeyMappingMixin @ click TAIL",
-                "startUseItem between client ticks", "gated by ServerLock.instantDetonation()");
-        offset = note(offset, "server_lock", () -> Component.translatable(serverStatusKey()).getString(),
-                ServerLock.suspendedHere() ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT_BRIGHT,
-                "ServerLock: singleplayer, LAN, localhost, servers allowed this session",
-                "allowed servers are never saved or shown");
+        offset = note(offset, "chain_moved", () -> Component.translatable("kohs_anchors.tab.server").getString()
+                .toUpperCase(Locale.ROOT), AnchorsTheme.INTENSE_BRIGHT, "the anchor chain options live on Anchors Server",
+                "ServerLock: only where a bridge allows them");
         offset = section(offset, "kohs_anchors.section.dev");
         offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("dev_mode"),
                 description("dev_mode"), this.font, () -> settings.devMode, () -> {
@@ -588,14 +621,179 @@ public final class AnchorsScreen extends Screen {
             {"MinecraftUseInvoker", "Minecraft.startUseItem", "Vanilla's own use, for a held click.", "INVOKER"},
             {"MinecraftPickInvoker", "Minecraft.pick", "Vanilla's crosshair raycast (26.x).", "INVOKER"}};
 
-    private String serverStatusKey() {
-        if (!ServerLock.anyAdvancedOn()) {
-            return "kohs_anchors.server.status.off";
+    // ------------------------------------------------------------------------------------------
+    // Anchors Server
+    // ------------------------------------------------------------------------------------------
+
+    /**
+     * The bridge: its state and a new check, the anchor chain options it allows (improved by the
+     * server's side), what it adds to the anchors, and the plugin's page.
+     */
+    private int buildServer(int offset) {
+        AnchorsConfig.Settings settings = settings();
+        BridgeClient.State state = BridgeClient.state();
+        offset = section(offset, "kohs_anchors.section.bridge");
+        offset = note(offset, "bridge_status", this::bridgeBadge, bridgeColor(), "BridgeClient.state() = " + state,
+                "channel " + BridgeProtocol.CHANNEL + " · protocol " + BridgeProtocol.VERSION,
+                "policy " + Integer.toBinaryString(BridgeClient.policy()) + " · " + BridgeClient.platform() + " "
+                        + BridgeClient.bridgeVersion());
+        if (state != BridgeClient.State.LOCAL && state != BridgeClient.State.OFFLINE) {
+            offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("bridge_check"),
+                    description("bridge_check"), this.font, () -> Component.translatable("kohs_anchors.button.check").getString(),
+                    () -> {
+                        BridgeClient.recheck();
+                        startServerCheck(false);
+                    }, false, false, "bridge_check", "BridgeClient.recheck() · ServerCheckWindow"));
         }
-        if (ServerLock.local()) {
-            return "kohs_anchors.server.status.local";
+        offset = section(offset, "kohs_anchors.section.anchor_chain");
+        offset = serverToggle(offset, "fast_chain", BridgeProtocol.POLICY_FAST_CHAIN, () -> settings.fastChain,
+                value -> settings.fastChain = value, OptionFx.Kind.CHAIN, "FastChain.decide ← AnchorInput.decide",
+                "predictions drawn by AnchorVeil", "ServerLock.fastChain(): the bridge's POLICY_FAST_CHAIN");
+        offset = serverToggle(offset, "instant_detonation", BridgeProtocol.POLICY_INSTANT_DETONATION,
+                () -> settings.instantDetonation, value -> settings.instantDetonation = value, OptionFx.Kind.INSTANT,
+                "AnchorInput.afterKeyClicked ← KeyMappingMixin @ click TAIL", "startUseItem between client ticks",
+                "ServerLock.instantDetonation(): POLICY_INSTANT_DETONATION");
+        offset = section(offset, "kohs_anchors.section.server_optimization");
+        offset = serverToggle(offset, "better_enemy_glow", BridgeProtocol.POLICY_OWNERSHIP, () -> settings.betterEnemyGlow,
+                value -> settings.betterEnemyGlow = value, OptionFx.Kind.ENEMY, "BridgeClient OWNER → AnchorTracker.serverOwner",
+                "owners told this connection: " + BridgeClient.ownersReceived());
+        offset = serverToggle(offset, "bridge_latency", BridgeProtocol.POLICY_LATENCY, () -> settings.bridgeLatency,
+                value -> settings.bridgeLatency = value, OptionFx.Kind.LATENCY, "BridgeClient PING / PONG once a second",
+                "Latency.millis() → AnchorVeil and the early clicks' waits");
+        offset = section(offset, "kohs_anchors.section.bridge_plugin");
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("bridge_plugin"),
+                description("bridge_plugin"), this.font, () -> Component.translatable("kohs_anchors.button.open").getString(),
+                () -> openLink(ServerCheckWindow.PLUGIN_URL), false, false, "bridge_plugin", ServerCheckWindow.PLUGIN_URL));
+        return offset;
+    }
+
+    /**
+     * An option of the bridge's. Without a bridge it is locked: a click shows why, with the padlock.
+     * Switched on, it plays what it does over the anchor column.
+     */
+    private int serverToggle(int offset, String option, int policyBit, BooleanSupplier state, Consumer<Boolean> set,
+            OptionFx.Kind fx, String... details) {
+        boolean available = BridgeClient.available();
+        Component tag = Component.translatable(!available ? "kohs_anchors.tag.locked"
+                : BridgeClient.allows(policyBit) ? "kohs_anchors.tag.bridge" : "kohs_anchors.tag.off_here");
+        return addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
+                this.font, state, () -> {
+                    if (!BridgeClient.available()) {
+                        startServerCheck(true);
+                        return;
+                    }
+                    boolean next = !state.getAsBoolean();
+                    set.accept(next);
+                    AnchorsConfig.changed();
+                    AnchorsConfig.save();
+                    BridgeClient.settingsChanged();
+                    if (next) {
+                        this.optionFx = new OptionFx(fx);
+                    }
+                }, !available, tag, option, details));
+    }
+
+    private String bridgeBadge() {
+        return Component.translatable("kohs_anchors.bridge.badge." + BridgeClient.state().name().toLowerCase(Locale.ROOT))
+                .getString().toUpperCase(Locale.ROOT);
+    }
+
+    private static int bridgeColor() {
+        return switch (BridgeClient.state()) {
+            case CONNECTED, LOCAL -> 0xFF000000 | AnchorFx.GREEN_BRIGHT;
+            case MISSING, NO_API -> AnchorsTheme.CRIMSON_BRIGHT;
+            default -> AnchorsTheme.ACCENT_BRIGHT;
+        };
+    }
+
+    /** Whether the Anchors Server tab is locked: a server without a bridge, or no way to talk to one. */
+    private static boolean serverLocked() {
+        BridgeClient.State state = BridgeClient.state();
+        return state == BridgeClient.State.MISSING || state == BridgeClient.State.NO_API;
+    }
+
+    /** Runs the check window, or shows its answer at once ({@code direct}) for a locked option. */
+    private void startServerCheck(boolean direct) {
+        checkedFor = this.minecraft.getConnection();
+        this.serverCheck = new ServerCheckWindow(settings().interfaceMotion, this.bridgeFigure,
+                () -> previewShown() ? this.previewArt : AnchorsLayout.Rect.EMPTY, this::openLink, direct);
+    }
+
+    /** Whether this connection has not been checked yet on the Anchors Server tab. */
+    private boolean needsServerCheck() {
+        Object current = this.minecraft.getConnection();
+        return current != checkedFor && this.entry == null;
+    }
+
+    /** Opens a page in the browser, after the game's own "open this link?". */
+    void openLink(String url) {
+        ConfirmLinkScreen.confirmLinkNow(this, URI.create(url));
+    }
+
+    /** Whether the enemy's page is open with enemy anchors off: only their switch and anchor show. */
+    private static boolean enemyOff() {
+        return enemyPage && !AnchorsConfig.settings().enemyGlow.enabled;
+    }
+
+    /** The Advanced tab's deeper purple. */
+    private boolean intense() {
+        return this.tab == ADVANCED && !enemyPage;
+    }
+
+    /**
+     * Enemy anchors on or off from their page: on, the tabs and the options come in behind the anchor
+     * flying into its column; off, the anchor goes back under the switch.
+     */
+    private void setEnemyAnchors(boolean on) {
+        AnchorsConfig.Settings settings = settings();
+        if (settings.enemyGlow.enabled == on) {
+            return;
         }
-        return ServerLock.allowedHere() ? "kohs_anchors.server.status.allowed" : "kohs_anchors.server.status.suspended";
+        boolean motion = settings.interfaceMotion;
+        if (on) {
+            AnchorsLayout.Rect from = enemyOffStage();
+            settings.enemyGlow.enabled = true;
+            AnchorsConfig.changed();
+            AnchorsConfig.save();
+            this.tab = ENEMY_GLOW;
+            lastTab = ENEMY_GLOW;
+            enemyTab = ENEMY_GLOW;
+            long now = System.nanoTime();
+            // The tabs and the rows wait for the anchor to take off.
+            this.tabsDealtAt = motion ? now + 280_000_000L : now;
+            this.tabChangedAt = motion ? now + 380_000_000L : now;
+            this.scroll = 0.0F;
+            this.scrollTarget = 0.0F;
+            rebuildWidgets();
+            this.enemyReveal = new EnemyReveal(true, motion, this.enemyFigure, () -> from, () -> this.previewArt);
+        } else {
+            AnchorsLayout.Rect from = previewShown() ? this.previewArt : enemyOffStage();
+            settings.enemyGlow.enabled = false;
+            AnchorsConfig.changed();
+            AnchorsConfig.save();
+            this.tab = ENEMY_GLOW;
+            lastTab = ENEMY_GLOW;
+            enemyTab = ENEMY_GLOW;
+            rebuildWidgets();
+            this.enemyReveal = new EnemyReveal(false, motion, this.enemyFigure, () -> from, this::enemyOffStage);
+        }
+    }
+
+    /** The enemy page's switch while their anchors are off: in the middle of the body, near its top. */
+    private AnchorsLayout.Rect enemyOffSwitch() {
+        AnchorsLayout.Rect body = this.layout.body();
+        int width = Math.min(240, Math.max(110, body.width() - 40));
+        return new AnchorsLayout.Rect(body.centerX() - width / 2, body.y() + Math.max(6, body.height() / 10), width, 20);
+    }
+
+    /** Where their anchor stands under that switch. */
+    private AnchorsLayout.Rect enemyOffStage() {
+        AnchorsLayout.Rect body = this.layout.body();
+        AnchorsLayout.Rect pill = enemyOffSwitch();
+        int top = pill.bottom() + 32;
+        int bottom = body.bottom() - 6;
+        int size = Math.max(24, Math.min(bottom - top, 150));
+        return new AnchorsLayout.Rect(body.centerX() - size / 2, top + Math.max(0, (bottom - top - size) / 2), size, size);
     }
 
     private int x() {
@@ -652,23 +850,6 @@ public final class AnchorsScreen extends Screen {
                 }, false, null, option, details));
     }
 
-    /** An advanced option: switching it off is immediate, switching it on takes two warnings. */
-    private int dangerRow(int offset, String option, BooleanSupplier state, Consumer<Boolean> set, String... details) {
-        return addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
-                this.font, state, () -> {
-                    if (state.getAsBoolean()) {
-                        set.accept(false);
-                        AnchorsConfig.save();
-                        return;
-                    }
-                    this.warning = new AnchorsWarning(Component.translatable("kohs_anchors.option." + option),
-                            settings().interfaceMotion, () -> {
-                                set.accept(true);
-                                AnchorsConfig.save();
-                            });
-                }, true, Component.translatable("kohs_anchors.tag.not_secure"), option, details));
-    }
-
     private int slider(int offset, String option, IntSupplier value, IntConsumer set, int[] stops,
             java.util.function.IntFunction<String> format, Runnable onRelease, String... details) {
         return addRow(offset, new AnchorSliderRow(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
@@ -695,12 +876,6 @@ public final class AnchorsScreen extends Screen {
         return offset + row.getHeight() + ROW_GAP;
     }
 
-    private int bannerHeightFor(int width) {
-        List<FormattedCharSequence> lines = this.font.split(Component.translatable("kohs_anchors.advanced.banner.text"),
-                Math.max(40, width - 34));
-        return 8 + 11 + lines.size() * 10 + 6;
-    }
-
     private void applyScroll() {
         AnchorsLayout.Rect viewport = this.layout.options;
         int offset = Math.round(this.scroll);
@@ -715,14 +890,15 @@ public final class AnchorsScreen extends Screen {
         return tab >= ENEMY_GLOW;
     }
 
-    /** The tabs the bar shows: the player's, or the enemy anchors' three. */
+    /** The tabs the bar shows: the player's, the enemy anchors' three, or none while theirs are off. */
     private static int[] visibleTabs() {
-        return enemyPage ? ENEMY_TABS : OWN_TABS;
+        return enemyPage ? (AnchorsConfig.settings().enemyGlow.enabled ? ENEMY_TABS : NO_TABS) : OWN_TABS;
     }
 
     /** Whether the tab in view has the anchor column beside its options. */
     private boolean previewShown() {
-        return this.layout.showsPreview() && this.tab != ANCHOR && this.tab != KOHS && this.tab != ENEMY_ADVANCED;
+        return this.layout.showsPreview() && this.tab != ANCHOR && this.tab != KOHS && this.tab != ENEMY_ADVANCED
+                && !enemyOff();
     }
 
     private void selectTab(int index) {
@@ -839,9 +1015,9 @@ public final class AnchorsScreen extends Screen {
         rebuildWidgets();
     }
 
-    /** The screen's danger colours: the Advanced tab, and the enemy's anchors. */
+    /** The screen's danger colours: the enemy's anchors, and Anchors Server on a server without a bridge. */
     private boolean crimson() {
-        return this.tab == ADVANCED || enemyPage;
+        return enemyPage || this.tab == SERVER && serverLocked();
     }
 
     /** How red the background is: 1 on the enemy's page, in between while switching. */
@@ -887,6 +1063,22 @@ public final class AnchorsScreen extends Screen {
     @Override
     public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick) {
         release();
+        if (this.entry != null) {
+            this.entry.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
+            if (!this.entry.done()) {
+                return;
+            }
+            this.entry = null;
+            // The menu's own entrance plays now, and the enemy switch calls attention to itself once.
+            this.openedAt = System.nanoTime();
+            if (this.highlightSwitch) {
+                this.switchHighlightAt = this.openedAt;
+            }
+        }
+        if (this.tab == SERVER && this.shownBridgeState != BridgeClient.state()) {
+            // The bridge answered while the tab was open: its rows follow.
+            rebuildWidgets();
+        }
         long now = System.nanoTime();
         float frameMillis = Mth.clamp((now - this.lastFrame) / 1_000_000.0F, 0.0F, 50.0F);
         this.lastFrame = now;
@@ -908,7 +1100,8 @@ public final class AnchorsScreen extends Screen {
             AnchorsLayout.Rect panel = this.layout.panel;
             AnchorsUi.sigil(graphics, panel.centerX(), panel.centerY(),
                     Math.round(Math.min(panel.width(), panel.height()) * 0.62F), seconds,
-                    advanced ? AnchorsTheme.CRIMSON : AnchorsTheme.ACCENT_DEEP, 0.55F * intro, this.anchorCharge);
+                    advanced ? AnchorsTheme.CRIMSON : intense() ? AnchorsTheme.INTENSE_DEEP : AnchorsTheme.ACCENT_DEEP,
+                    0.55F * intro, this.anchorCharge);
             AnchorsUi.motes(graphics, this.width, this.height, seconds, intro);
         }
         drawPanel(graphics, intro, seconds, motion, advanced);
@@ -928,10 +1121,22 @@ public final class AnchorsScreen extends Screen {
                 AnchorsUi.slash(graphics, this.layout.body(), progress(now - this.tabChangedAt, TAB_SLASH_NANOS),
                         AnchorsTheme.CRIMSON_BRIGHT);
             }
+        } else if (enemyOff()) {
+            drawEnemyOff(graphics, pointerX, pointerY, intro, motion, seconds);
         } else {
             drawOptions(graphics, pointerX, pointerY, partialTick, now, motion, seconds);
             if (this.layout.showsPreview()) {
-                drawPreview(graphics, pointerX, pointerY, intro, motion, seconds);
+                if (this.tab == SERVER) {
+                    drawServerPreview(graphics, intro, motion, seconds);
+                } else {
+                    drawPreview(graphics, pointerX, pointerY, intro, motion, seconds);
+                }
+            } else if (this.tab == SERVER && this.optionFx != null) {
+                // No anchor column: the option's animation plays over the options.
+                this.optionFx.render(graphics, this.font, this.layout.options, seconds);
+                if (this.optionFx.done()) {
+                    this.optionFx = null;
+                }
             }
         }
         drawFooterNote(graphics, intro);
@@ -941,6 +1146,15 @@ public final class AnchorsScreen extends Screen {
             if (this.enemySwitch.done()) {
                 this.enemySwitch = null;
             }
+        }
+        if (this.enemyReveal != null) {
+            this.enemyReveal.render(graphics, this.width, this.height);
+            if (this.enemyReveal.done()) {
+                this.enemyReveal = null;
+            }
+        }
+        if (this.tab == SERVER && this.serverCheck == null && needsServerCheck()) {
+            startServerCheck(false);
         }
         AnchorsLayout.Rect reset = this.layout.resetButton;
         DevInspector.node("AnchorsButton", "reset tab", reset.x(), reset.y(), reset.width(), reset.height(),
@@ -961,10 +1175,11 @@ public final class AnchorsScreen extends Screen {
                 rebuildWidgets();
             }
         }
-        if (this.warning != null) {
-            this.warning.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
-            if (this.warning.done()) {
-                this.warning = null;
+        if (this.serverCheck != null) {
+            this.serverCheck.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
+            if (this.serverCheck.done()) {
+                this.serverCheck = null;
+                rebuildWidgets();
             }
         }
         if (this.devWarning != null) {
@@ -1051,27 +1266,29 @@ public final class AnchorsScreen extends Screen {
         int height = Math.max(1, Math.round(panel.height() * grow));
         int x = panel.x() + (panel.width() - width) / 2;
         int y = panel.y() + (panel.height() - height) / 2;
-        int accent = dev() ? AnchorsTheme.DEV_BLUE : advanced ? AnchorsTheme.CRIMSON : AnchorsTheme.ACCENT;
+        int accent = dev() ? AnchorsTheme.DEV_BLUE : advanced ? AnchorsTheme.CRIMSON : intense() ? AnchorsTheme.INTENSE
+                : AnchorsTheme.ACCENT;
         AnchorsUi.halo(graphics, x, y, width, height, accent, 6, 0.6F * intro);
         AnchorsUi.panel(graphics, x, y, width, height,
                 AnchorsTheme.fade(AnchorsTheme.PANEL_TOP, 0.3F + intro * 0.7F),
                 AnchorsTheme.fade(AnchorsTheme.PANEL_BOTTOM, 0.3F + intro * 0.7F));
         AnchorsUi.roundedOutline(graphics, x, y, width, height, AnchorsTheme.fade(
-                advanced ? 0xE0FF315C : AnchorsTheme.PANEL_BORDER, intro));
+                advanced ? 0xE0FF315C : intense() ? 0xE0C55BFF : AnchorsTheme.PANEL_BORDER, intro));
         DevInspector.node("Panel", "AnchorsScreen", panel.x(), panel.y(), panel.width(), panel.height(),
                 "AnchorsLayout.fit(" + this.width + ", " + this.height + ")", "glass " + Integer.toHexString(AnchorsTheme.PANEL_TOP));
         if (intro < 0.98F) {
             return;
         }
         AnchorsUi.bladeCorners(graphics, panel.x(), panel.y(), panel.width(), panel.height(), 9,
-                advanced ? 0xE0FF6A86 : 0xE0E9D5FF);
+                advanced ? 0xE0FF6A86 : intense() ? 0xE0F0C8FF : 0xE0E9D5FF);
         if (motion) {
             AnchorsUi.comets(graphics, panel.x(), panel.y(), panel.width(), panel.height(), seconds,
-                    advanced ? 0xFF9AB0 : 0xE8CCFF);
+                    advanced ? 0xFF9AB0 : intense() ? 0xF0C8FF : 0xE8CCFF);
         }
         int headerLine = this.layout.header.bottom() - 1;
         AnchorsUi.energyLine(graphics, panel.x() + 8, panel.right() - 8, headerLine,
-                advanced ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT, motion ? seconds : 0.0D, 1.0F);
+                advanced ? AnchorsTheme.CRIMSON_BRIGHT : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT,
+                motion ? seconds : 0.0D, 1.0F);
         int footerLine = this.layout.footer.y();
         graphics.fill(panel.x() + 8, footerLine, panel.right() - 8, footerLine + 1, AnchorsTheme.HEADER_LINE);
     }
@@ -1171,6 +1388,19 @@ public final class AnchorsScreen extends Screen {
         if (enemyPage) {
             AnchorsUi.halo(graphics, x, y, width, height, AnchorsTheme.CRIMSON_BRIGHT, 3, intro * (0.4F + 0.6F * pulse));
         }
+        float highlight = this.switchHighlightAt < 0L || enemyPage ? 0.0F
+                : 1.0F - AnchorsTheme.clamp01((System.nanoTime() - this.switchHighlightAt) / 7_000_000_000.0F);
+        if (highlight > 0.0F) {
+            // After the first entry: a beating halo, and an arrow bobbing up at it.
+            float beat = AnchorsTheme.pulse(seconds, 0.9D);
+            AnchorsUi.halo(graphics, x, y, width, height, AnchorsTheme.CRIMSON_BRIGHT, 4, intro * highlight * (0.45F + 0.55F * beat));
+            int arrowX = x + width / 2;
+            int arrowY = y + height + 3 + Math.round((1.0F - beat) * 3.0F);
+            int arrow = AnchorsTheme.withAlpha(0xFF6A86, Math.round(255 * highlight * intro));
+            for (int row = 0; row < 4; row++) {
+                graphics.fill(arrowX - row, arrowY + row, arrowX + row + 1, arrowY + row + 1, arrow);
+            }
+        }
         AnchorsUi.panel(graphics, x, y, width, height, AnchorsTheme.fade(top, intro), AnchorsTheme.fade(bottom, intro));
         AnchorsUi.roundedOutline(graphics, x, y, width, height, AnchorsTheme.fade(enemyPage
                 ? AnchorsTheme.lerp(0xFFB8243F, 0xFFFF6A86, Math.max(hover, pulse))
@@ -1202,7 +1432,8 @@ public final class AnchorsScreen extends Screen {
             int index = tabs[slot];
             AnchorsLayout.Rect rect = this.layout.tab(slot, tabs.length);
             boolean selected = index == this.tab;
-            boolean danger = index == ADVANCED || enemyPage;
+            boolean danger = enemyPage || index == SERVER && serverLocked();
+            boolean intense = index == ADVANCED && !enemyPage;
             boolean hovered = rect.contains(mouseX, mouseY);
             this.tabHover[index] += ((hovered ? 1.0F : 0.0F) - this.tabHover[index]) * response;
             float hover = this.tabHover[index];
@@ -1226,14 +1457,17 @@ public final class AnchorsScreen extends Screen {
             float tabIntro = tabAlpha;
             float contentAlpha = tabIntro * AnchorsTheme.clamp01((deal - 0.45F) / 0.55F);
 
-            int accent = danger ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT;
-            int top = selected ? (danger ? 0xE0521028 : 0xE03A1668) : AnchorsTheme.lerp(0x801D0D32, 0xB02A1248, hover);
-            int bottom = selected ? (danger ? 0xE02A0612 : 0xE01D0D32) : AnchorsTheme.lerp(0x7012091F, 0x901D0D32, hover);
+            int accent = danger ? AnchorsTheme.CRIMSON_BRIGHT : intense ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT;
+            int top = selected ? (danger ? 0xE0521028 : intense ? AnchorsTheme.INTENSE_GLASS_TOP : 0xE03A1668)
+                    : AnchorsTheme.lerp(intense ? 0x8A2A0E52 : 0x801D0D32, intense ? 0xB83C1270 : 0xB02A1248, hover);
+            int bottom = selected ? (danger ? 0xE02A0612 : intense ? AnchorsTheme.INTENSE_GLASS_BOTTOM : 0xE01D0D32)
+                    : AnchorsTheme.lerp(0x7012091F, 0x901D0D32, hover);
             AnchorsUi.panel(graphics, rect.x(), rect.y(), rect.width(), rect.height(), AnchorsTheme.fade(top, tabIntro),
                     AnchorsTheme.fade(bottom, tabIntro));
             int border = selected ? AnchorsTheme.fade(accent, tabIntro)
-                    : AnchorsTheme.fade(AnchorsTheme.lerp(danger ? 0x8A6A1030 : AnchorsTheme.CARD_BORDER,
-                            danger ? 0xE0FF6A86 : AnchorsTheme.CARD_BORDER_HOVER, hover), tabIntro);
+                    : AnchorsTheme.fade(AnchorsTheme.lerp(danger ? 0x8A6A1030 : intense ? 0x9A6A1AB0 : AnchorsTheme.CARD_BORDER,
+                            danger ? 0xE0FF6A86 : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.CARD_BORDER_HOVER, hover),
+                            tabIntro);
             AnchorsUi.roundedOutline(graphics, rect.x(), rect.y(), rect.width(), rect.height(), border);
             if (selected) {
                 float breathe = motion ? 0.7F + 0.3F * AnchorsTheme.pulse(seconds, 2.4D) : 1.0F;
@@ -1251,21 +1485,25 @@ public final class AnchorsScreen extends Screen {
             int contentWidth = iconSize + (iconOnly ? 0 : 4 + this.font.width(label));
             int startX = full.x() + (full.width() - contentWidth) / 2;
             int iconY = full.y() + (full.height() - iconSize) / 2;
-            int iconColor = AnchorsTheme.fade(selected || hover > 0.5F ? (danger ? 0xFFFF6A86 : AnchorsTheme.ACCENT_BRIGHT)
-                    : (danger ? 0xFFB8243F : AnchorsTheme.SILVER), contentAlpha);
+            int iconColor = AnchorsTheme.fade(selected || hover > 0.5F
+                    ? (danger ? 0xFFFF6A86 : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.ACCENT_BRIGHT)
+                    : (danger ? 0xFFB8243F : intense ? 0xFFC77DFF : AnchorsTheme.SILVER), contentAlpha);
             drawTabIcon(graphics, index, startX, iconY, iconSize, iconColor);
             if (!iconOnly) {
                 int textColor = selected ? AnchorsTheme.TITLE : AnchorsTheme.lerp(AnchorsTheme.TEXT_MUTED, AnchorsTheme.TEXT, hover);
                 if (danger && !selected) {
                     textColor = AnchorsTheme.lerp(0xFFE08A9E, 0xFFFFD6DE, hover);
+                } else if (intense && !selected) {
+                    textColor = AnchorsTheme.lerp(0xFFD9A6FF, 0xFFF6E6FF, hover);
                 }
                 AnchorsUi.label(graphics, this.font, label, startX + iconSize + 4, full.y() + (full.height() - 8) / 2,
                         AnchorsTheme.fade(textColor, contentAlpha), false);
             }
-            if (index == ADVANCED && advancedOn) {
-                // A live advanced option: a crimson ember; hollow while it is suspended on this server.
+            if (index == SERVER && advancedOn) {
+                // A live anchor chain option: a green ember where the bridge allows it, a dim red one where not.
                 float ember = motion ? 0.6F + 0.4F * AnchorsTheme.pulse(seconds, 1.4D) : 1.0F;
-                int emberColor = AnchorsTheme.withAlpha(suspended ? 0x8A6A1030 : 0xFF315C, Math.round(255 * ember * contentAlpha));
+                int emberColor = AnchorsTheme.withAlpha(suspended ? 0x8A6A1030 : AnchorFx.GREEN,
+                        Math.round(255 * ember * contentAlpha));
                 AnchorsUi.diamond(graphics, rect.right() - 5, rect.y() + 4, 2, emberColor);
             }
             DevInspector.node("Tab", TAB_KEYS[index], full.x(), full.y(), full.width(), full.height(),
@@ -1386,6 +1624,26 @@ public final class AnchorsScreen extends Screen {
                 graphics.fill(x + size - 1, y, x + size, y + size, color);
                 graphics.fill(x + 4, y + center, x + size, y + center + 1, color);
             }
+            case SERVER -> {
+                // A bridge: an arch over the road, two pillars under it.
+                for (int step = 1; step < size - 1; step++) {
+                    int drop = Math.abs(step - center) * 3 / 4;
+                    graphics.fill(x + step, y + 1 + drop, x + step + 1, y + 2 + drop, color);
+                }
+                graphics.fill(x + center, y + 2, x + center + 1, y + 5, AnchorsTheme.fade(color, 0.6F));
+                graphics.fill(x, y + 5, x + size, y + 6, color);
+                graphics.fill(x + 1, y + 6, x + 2, y + size, color);
+                graphics.fill(x + size - 2, y + 6, x + size - 1, y + size, color);
+            }
+            case ADVANCED -> {
+                // A cog: a ring with four teeth and a hub.
+                AnchorsUi.outline(graphics, x + 2, y + 2, size - 4, size - 4, color);
+                graphics.fill(x + center, y, x + center + 1, y + 2, color);
+                graphics.fill(x + center, y + size - 2, x + center + 1, y + size, color);
+                graphics.fill(x, y + center, x + 2, y + center + 1, color);
+                graphics.fill(x + size - 2, y + center, x + size, y + center + 1, color);
+                graphics.fill(x + center, y + center, x + center + 1, y + center + 1, color);
+            }
             default -> AnchorsUi.warningGlyph(graphics, x + center, y, size, color, 0xFF1A0308);
         }
     }
@@ -1401,22 +1659,20 @@ public final class AnchorsScreen extends Screen {
         int offset = Math.round(this.scroll);
         int lineRight = viewport.x() + this.layout.rowWidth();
         graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
-        if (this.bannerOffset >= 0) {
-            drawBanner(graphics, viewport.x(), viewport.y() + this.bannerOffset - offset, this.layout.rowWidth(), motion,
-                    seconds, motion ? AnchorsTheme.easeOutCubic(progress(since, ROW_FADE_NANOS)) : 1.0F);
-        }
         for (Section section : this.sections) {
             int y = viewport.y() + section.offset() + 2 - offset;
             if (y + SECTION_HEIGHT < viewport.y() || y > viewport.bottom()) {
                 continue;
             }
-            int sectionColor = advanced ? 0xFFFF9AB0 : AnchorsTheme.SECTION;
-            AnchorsUi.diamond(graphics, viewport.x() + 3, y + 4, 2, advanced ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT);
+            int sectionColor = advanced ? 0xFFFF9AB0 : intense() ? 0xFFE7B5FF : AnchorsTheme.SECTION;
+            AnchorsUi.diamond(graphics, viewport.x() + 3, y + 4, 2, advanced ? AnchorsTheme.CRIMSON_BRIGHT
+                    : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT);
             AnchorsUi.label(graphics, this.font, section.title(), viewport.x() + 9, y, sectionColor, false);
             int lineX = viewport.x() + 15 + this.font.width(section.title());
             if (lineX < lineRight) {
                 AnchorsUi.energyLine(graphics, lineX, lineRight, y + 4,
-                        advanced ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT, motion ? seconds : 0.0D, 0.8F);
+                        advanced ? AnchorsTheme.CRIMSON_BRIGHT : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT,
+                        motion ? seconds : 0.0D, 0.8F);
             }
             DevInspector.node("Section", section.title(), viewport.x(), y, this.layout.rowWidth(), SECTION_HEIGHT - 2,
                     "Component " + section.key());
@@ -1453,7 +1709,8 @@ public final class AnchorsScreen extends Screen {
         // A blade crosses the options when the tab changes.
         if (motion && this.tabChangedAt >= 0L) {
             float slash = progress(now - this.tabChangedAt, TAB_SLASH_NANOS);
-            AnchorsUi.slash(graphics, viewport, slash, advanced ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT_BRIGHT);
+            AnchorsUi.slash(graphics, viewport, slash, advanced ? AnchorsTheme.CRIMSON_BRIGHT
+                    : intense() ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.ACCENT_BRIGHT);
         }
 
         if (this.maxScroll > 0) {
@@ -1462,7 +1719,7 @@ public final class AnchorsScreen extends Screen {
             int thumbHeight = Math.max(12, viewport.height() * viewport.height() / Math.max(1, this.contentHeight));
             int thumbY = viewport.y() + Math.round((viewport.height() - thumbHeight) * (this.scroll / this.maxScroll));
             graphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight,
-                    advanced ? 0xE6FF6A86 : AnchorsTheme.SCROLL_THUMB);
+                    advanced ? 0xE6FF6A86 : intense() ? 0xE6D27BFF : AnchorsTheme.SCROLL_THUMB);
             if (this.scroll > 0.5F) {
                 graphics.fillGradient(viewport.x(), viewport.y(), trackX - 1, viewport.y() + 8, 0x800B0514, 0x000B0514);
             }
@@ -1471,27 +1728,6 @@ public final class AnchorsScreen extends Screen {
                         0x800B0514);
             }
         }
-    }
-
-    /** The advanced tab's warning banner: crimson, with the sign and a slow pulse. */
-    private void drawBanner(GuiGraphicsExtractor graphics, int x, int y, int width, boolean motion, double seconds,
-            float appear) {
-        float pulse = motion ? 0.55F + 0.45F * AnchorsTheme.pulse(seconds, 2.2D) : 0.8F;
-        AnchorsUi.panel(graphics, x, y, width, this.bannerHeight, AnchorsTheme.fade(0xD03A0A1A, appear),
-                AnchorsTheme.fade(0xD0180410, appear));
-        AnchorsUi.roundedOutline(graphics, x, y, width, this.bannerHeight,
-                AnchorsTheme.withAlpha(0xFF315C, Math.round((120 + 120 * pulse) * appear)));
-        AnchorsUi.bladeCorners(graphics, x, y, width, this.bannerHeight, 5, AnchorsTheme.fade(0xFFFF6A86, appear));
-        AnchorsUi.warningGlyph(graphics, x + 13, y + 7, 13, AnchorsTheme.fade(0xFFFF315C, appear), 0xFF1A0308);
-        String title = Component.translatable("kohs_anchors.advanced.banner.title").getString().toUpperCase(Locale.ROOT);
-        AnchorsUi.label(graphics, this.font, title, x + 26, y + 8, AnchorsTheme.fade(0xFFFFE4EA, appear), true);
-        int lineY = y + 8 + 11;
-        for (FormattedCharSequence line : this.font.split(Component.translatable("kohs_anchors.advanced.banner.text"),
-                Math.max(40, width - 34))) {
-            AnchorsUi.line(graphics, this.font, line, x + 26, lineY, AnchorsTheme.fade(0xFFE8C5CE, appear));
-            lineY += 10;
-        }
-        DevInspector.node("Banner", "advanced", x, y, width, this.bannerHeight, "ServerLock + AnchorsWarning (two stages)");
     }
 
     private void drawPreview(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float intro, boolean motion,
@@ -1515,8 +1751,8 @@ public final class AnchorsScreen extends Screen {
                     motion ? seconds * 1.6D : 0.0D, advanced || enemyView ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT,
                     0.8F * intro, enemyView ? this.enemyFigure.charge() : this.anchorPreview.charge());
         }
-        if (this.enemySwitch != null) {
-            // The anchor is on its way between the two pages: the switch draws it.
+        if (this.enemySwitch != null || this.enemyReveal != null) {
+            // The anchor is on its way: the switch or the reveal draws it.
         } else if (enemyView) {
             // The enemy's anchor exactly as a fight shows it: the same block, lit in their colour.
             float scale = Math.min(this.previewArt.width(), this.previewArt.height()) / 2.4F;
@@ -1568,6 +1804,112 @@ public final class AnchorsScreen extends Screen {
         drawStats(graphics, preview.x() + 8, statsTop + 4, preview.width() - 16, intro, true);
     }
 
+    /** Anchors Server's column: the bridge's anchor, green with a bridge, red under a padlock without. */
+    private void drawServerPreview(GuiGraphicsExtractor graphics, float intro, boolean motion, double seconds) {
+        AnchorsLayout.Rect preview = this.layout.preview;
+        boolean locked = serverLocked();
+        boolean ok = BridgeClient.available();
+        int accent = ok ? 0xFF000000 | AnchorFx.GREEN : locked ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT;
+        AnchorsUi.panel(graphics, preview.x(), preview.y(), preview.width(), preview.height(),
+                AnchorsTheme.fade(locked ? 0x6A2A0A18 : 0x6A12091F, intro), AnchorsTheme.fade(0x5A08050D, intro));
+        AnchorsUi.roundedOutline(graphics, preview.x(), preview.y(), preview.width(), preview.height(),
+                AnchorsTheme.fade(locked ? 0x8A6A1030 : ok ? 0x8A1F7A48 : AnchorsTheme.CARD_BORDER, intro));
+        AnchorsUi.bladeCorners(graphics, preview.x(), preview.y(), preview.width(), preview.height(), 6,
+                AnchorsTheme.fade(locked ? 0xC0FF6A86 : ok ? 0xC08CFFB8 : 0xC0C084FC, intro));
+        AnchorsLayout.Rect art = this.previewArt;
+        float scale = Math.min(art.width(), art.height()) / 2.4F;
+        int centerY = art.y() + art.height() / 2;
+        int radius = Math.round(Math.min(art.width(), art.height()) * 0.46F);
+        if (radius > 16) {
+            AnchorsUi.sigil(graphics, art.centerX(), centerY + radius / 6, radius, motion ? seconds * 1.6D : 0.0D, accent,
+                    0.8F * intro, ok ? 4.0F : 0.0F);
+        }
+        if (BridgeClient.state() == BridgeClient.State.CHECKING && motion) {
+            AnchorFx.radar(graphics, art.centerX(), centerY, Math.round(scale * 1.3F), seconds * 3.4D, 0xE9D5FF, 0.7F * intro);
+        }
+        boolean flying = this.serverCheck != null && this.serverCheck.flying();
+        if (!flying && art.width() > 0) {
+            this.bridgeFigure.draw(graphics, art.centerX(), centerY, scale, intro, 0.0F, motion, true, true,
+                    ok ? AnchorFx.GREEN : 0xFF315C, ok || locked ? 1.0F : 0.0F);
+            if (locked) {
+                int size = Math.max(10, Math.round(scale * 0.95F));
+                AnchorsUi.glowEllipse(graphics, art.centerX(), centerY, Math.round(size * 1.1F), Math.round(size * 0.9F), 0xFF315C,
+                        0.3F * intro);
+                AnchorFx.padlock(graphics, art.centerX(), centerY - Math.round(size * 0.2F), size, intro);
+            }
+        }
+        String status = bridgeBadge();
+        AnchorsUi.label(graphics, this.font, AnchorsUi.ellipsis(this.font, status, art.width() - 4),
+                art.centerX() - Math.min(this.font.width(status), art.width() - 4) / 2, art.bottom() - 10,
+                AnchorsTheme.fade(bridgeColor(), intro), true);
+        if (this.optionFx != null) {
+            this.optionFx.render(graphics, this.font, art, seconds);
+            if (this.optionFx.done()) {
+                this.optionFx = null;
+            }
+        }
+        DevInspector.node("BridgeFigure", "bridge anchor", art.x(), art.y(), art.width(), art.height(),
+                "BridgeClient.state() = " + BridgeClient.state(), "AnchorFigure(\"bridge\") tinted",
+                "OptionFx when an option is switched on");
+        int statsTop = preview.bottom() - STATS_HEIGHT - 8;
+        AnchorsUi.energyLine(graphics, preview.x() + 8, preview.right() - 8, statsTop - 1, accent, motion ? seconds : 0.0D, intro);
+        drawStats(graphics, preview.x() + 8, statsTop + 4, preview.width() - 16, intro, true);
+    }
+
+    /** Enemy anchors off: their switch in the middle, their red anchor under it, and a word on both. */
+    private void drawEnemyOff(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float intro, boolean motion,
+            double seconds) {
+        AnchorsLayout.Rect pill = enemyOffSwitch();
+        this.enemyOffHover += ((pill.contains(mouseX, mouseY) ? 1.0F : 0.0F) - this.enemyOffHover) * 0.25F;
+        float hover = this.enemyOffHover;
+        float pulse = motion ? AnchorsTheme.pulse(seconds, 1.6D) : 0.5F;
+        AnchorsUi.halo(graphics, pill.x(), pill.y(), pill.width(), pill.height(), AnchorsTheme.CRIMSON_BRIGHT, 4,
+                intro * (0.35F + 0.4F * pulse + 0.25F * hover));
+        AnchorsUi.panel(graphics, pill.x(), pill.y(), pill.width(), pill.height(),
+                AnchorsTheme.fade(AnchorsTheme.lerp(0xD03A0A1A, 0xE0521028, hover), intro), AnchorsTheme.fade(0xD0180410, intro));
+        AnchorsUi.roundedOutline(graphics, pill.x(), pill.y(), pill.width(), pill.height(),
+                AnchorsTheme.fade(AnchorsTheme.lerp(0xFFB8243F, 0xFFFF6A86, Math.max(hover, pulse * 0.5F)), intro));
+        String label = Component.translatable("kohs_anchors.option.enemy_enabled").getString().toUpperCase(Locale.ROOT);
+        String state = Component.translatable("kohs_anchors.state.off").getString().toUpperCase(Locale.ROOT);
+        int trackX = pill.right() - 30;
+        int trackY = pill.y() + 5;
+        AnchorsUi.label(graphics, this.font, AnchorsUi.ellipsis(this.font, label, trackX - this.font.width(state) - 14 - pill.x()),
+                pill.x() + 8, pill.y() + 6, AnchorsTheme.fade(0xFFFFE4EA, intro), true);
+        AnchorsUi.label(graphics, this.font, state, trackX - 4 - this.font.width(state), pill.y() + 6,
+                AnchorsTheme.fade(AnchorsTheme.STATE_OFF, intro), false);
+        AnchorsUi.panel(graphics, trackX, trackY, 22, 10, AnchorsTheme.fade(AnchorsTheme.SWITCH_OFF, intro),
+                AnchorsTheme.fade(0xFF12091F, intro));
+        AnchorsUi.roundedOutline(graphics, trackX, trackY, 22, 10, AnchorsTheme.fade(0xFF6A1030, intro));
+        graphics.fill(trackX + 2, trackY + 2, trackX + 8, trackY + 8, AnchorsTheme.fade(AnchorsTheme.KNOB_OFF, intro));
+
+        AnchorsLayout.Rect body = this.layout.body();
+        List<FormattedCharSequence> lines = this.font.split(Component.translatable("kohs_anchors.enemy.off.body"),
+                Math.max(60, Math.min(body.width() - 20, 320)));
+        int lineY = pill.bottom() + 6;
+        for (int index = 0; index < Math.min(2, lines.size()); index++) {
+            FormattedCharSequence line = lines.get(index);
+            AnchorsUi.line(graphics, this.font, line, body.centerX() - this.font.width(line) / 2, lineY,
+                    AnchorsTheme.fade(AnchorsTheme.TEXT_MUTED, intro));
+            lineY += 10;
+        }
+        AnchorsLayout.Rect stage = enemyOffStage();
+        float scale = Math.min(stage.width(), stage.height()) / 2.4F;
+        float centerY = stage.y() + stage.height() / 2.0F;
+        AnchorsUi.sigil(graphics, stage.centerX(), Math.round(centerY + scale * 0.2F), Math.round(scale * 2.0F),
+                motion ? seconds * 0.8D : 0.0D, AnchorsTheme.CRIMSON, 0.6F * intro, 0.0F);
+        if (this.enemyReveal == null && this.enemySwitch == null) {
+            this.enemyFigure.draw(graphics, stage.centerX(), centerY, scale, intro * 0.92F, 1.0F, motion, true, true,
+                    AnchorFigure.enemyColor(), 1.0F);
+        }
+        DevInspector.node("EnemyOff", "enemy anchors off", pill.x(), pill.y(), pill.width(), pill.height(),
+                "EnemyGlow.enabled = false: no tabs", "click: setEnemyAnchors(true) · EnemyReveal");
+    }
+
+    private static String bridgeShort() {
+        return Component.translatable("kohs_anchors.bridge.short." + BridgeClient.state().name().toLowerCase(Locale.ROOT))
+                .getString();
+    }
+
     private void drawStats(GuiGraphicsExtractor graphics, int x, int y, int width, float alpha, boolean withTitle) {
         int lineY = y;
         boolean advanced = crimson();
@@ -1589,10 +1931,12 @@ public final class AnchorsScreen extends Screen {
                 values = numbers(AnchorStats.predictedDetonations(), AnchorStats.confirmedDetonations(),
                         AnchorStats.heldClicks(), AnchorStats.mergedClicks(), AnchorStats.keptDetonations());
             }
-            case ADVANCED -> {
-                keys = new String[] {"chained", "instant", "merged", "dropped", "kept"};
-                values = numbers(AnchorStats.chainedClicks(), AnchorStats.instantDetonations(), AnchorStats.mergedClicks(),
-                        AnchorStats.droppedClicks(), AnchorStats.keptDetonations());
+            case SERVER -> {
+                keys = new String[] {"bridge", "ping", "owners", "chained", "instant"};
+                float roundTrip = BridgeClient.roundTripMillis();
+                values = new String[] {bridgeShort(), roundTrip >= 0.0F ? Math.round(roundTrip) + " ms" : "—",
+                        Integer.toString(BridgeClient.ownersReceived()), Integer.toString(AnchorStats.chainedClicks()),
+                        Integer.toString(AnchorStats.instantDetonations())};
             }
             case HERZIUM -> {
                 keys = new String[] {"ordered", "next_tick", "reported", "previews", "merged"};
@@ -1638,6 +1982,7 @@ public final class AnchorsScreen extends Screen {
         String note = Component.translatable(armed ? "kohs_anchors.footer.note.reset"
                 : this.tab == ENEMY_ADVANCED ? "kohs_anchors.footer.note.enemy_advanced"
                 : enemyPage ? "kohs_anchors.footer.note.enemy"
+                : this.tab == SERVER ? "kohs_anchors.footer.note.server"
                 : this.tab == ADVANCED ? "kohs_anchors.footer.note.advanced" : this.tab == ANCHOR ? "kohs_anchors.footer.note.anchor"
                 : this.tab == KOHS ? "kohs_anchors.footer.note.kohs" : "kohs_anchors.footer.note").getString();
         int noteWidth = this.font.width(note);
@@ -1668,6 +2013,18 @@ public final class AnchorsScreen extends Screen {
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
+        if (this.entry != null) {
+            return this.entry.mouseClicked(this.width, this.height, mouseX, mouseY, button);
+        }
+        if (this.serverCheck != null) {
+            return this.serverCheck.mouseClicked(this.width, this.height, mouseX, mouseY, button);
+        }
+        if (this.enemyReveal != null) {
+            // A click hurries the reveal to its end.
+            this.enemyReveal.skip();
+            this.enemyReveal = null;
+            return true;
+        }
         if (this.guardWarning != null) {
             return this.guardWarning.mouseClicked(this.font, this.width, this.height, mouseX, mouseY, button);
         }
@@ -1689,9 +2046,6 @@ public final class AnchorsScreen extends Screen {
         if (this.devWarning != null) {
             return this.devWarning.mouseClicked(this.width, this.height, mouseX, mouseY, button);
         }
-        if (this.warning != null) {
-            return this.warning.mouseClicked(this.width, this.height, mouseX, mouseY, button);
-        }
         if (this.soundPicker != null) {
             return this.soundPicker.mouseClicked(mouseX, mouseY, button);
         }
@@ -1708,6 +2062,10 @@ public final class AnchorsScreen extends Screen {
                 && mouseX < this.enemySwitchX + this.enemySwitchWidth && mouseY >= this.enemySwitchY
                 && mouseY < this.enemySwitchY + 13) {
             toggleEnemyAnchors();
+            return true;
+        }
+        if (enemyOff() && button == Keys.LEFT_BUTTON && enemyOffSwitch().contains(mouseX, mouseY)) {
+            setEnemyAnchors(true);
             return true;
         }
         int[] tabs = visibleTabs();
@@ -1757,9 +2115,9 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
-                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null
-                || this.herziumWindow != null) {
+        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+                || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null || this.enemyIntro != null
+                || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
         }
         if (this.figureDragging) {
@@ -1790,10 +2148,8 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
-        if (this.warning != null) {
-            return this.warning.mouseReleased();
-        }
-        if (this.devWarning != null || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
+        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+                || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
                 || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
         }
@@ -1831,9 +2187,9 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (this.warning != null || this.devWarning != null || this.crystalModal != null || this.popover != null
-                || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null
-                || this.herziumWindow != null) {
+        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+                || this.crystalModal != null || this.popover != null || this.guardWarning != null || this.enemyIntro != null
+                || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
         }
         if (this.soundPicker != null) {
@@ -1859,6 +2215,17 @@ public final class AnchorsScreen extends Screen {
     @Override
     public boolean keyPressed(KeyEvent event) {
         int key = event.key();
+        if (this.entry != null) {
+            return this.entry.keyPressed(key);
+        }
+        if (this.serverCheck != null) {
+            return this.serverCheck.keyPressed(key);
+        }
+        if (this.enemyReveal != null) {
+            this.enemyReveal.skip();
+            this.enemyReveal = null;
+            return true;
+        }
         if (this.guardWarning != null) {
             return this.guardWarning.keyPressed(key);
         }
@@ -1880,9 +2247,6 @@ public final class AnchorsScreen extends Screen {
         }
         if (this.devWarning != null) {
             return this.devWarning.keyPressed(key);
-        }
-        if (this.warning != null) {
-            return this.warning.keyPressed(key);
         }
         if (this.soundPicker != null) {
             return this.soundPicker.keyPressed(key);
@@ -1998,11 +2362,14 @@ public final class AnchorsScreen extends Screen {
                 settings.herziumSync = defaults.herziumSync;
                 settings.herziumIntro = defaults.herziumIntro;
             }
-            default -> {
+            case SERVER -> {
                 settings.fastChain = false;
                 settings.instantDetonation = false;
-                settings.devMode = false;
+                settings.betterEnemyGlow = defaults.betterEnemyGlow;
+                settings.bridgeLatency = defaults.bridgeLatency;
+                BridgeClient.settingsChanged();
             }
+            default -> settings.devMode = false;
         }
         AnchorsConfig.changed();
         AnchorsConfig.save();
@@ -2032,9 +2399,9 @@ public final class AnchorsScreen extends Screen {
 
     /** Whether a warning, picker or popover owns the pointer and the keyboard. */
     private boolean modalOpen() {
-        return this.warning != null || this.devWarning != null || this.crystalModal != null || this.soundPicker != null
-                || this.popover != null || this.guardWarning != null || this.enemyIntro != null || this.enemySwitch != null
-                || this.herziumWindow != null;
+        return this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+                || this.crystalModal != null || this.soundPicker != null || this.popover != null || this.guardWarning != null
+                || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null;
     }
 
     private void saveSettings() {
@@ -2048,7 +2415,10 @@ public final class AnchorsScreen extends Screen {
             this.enemySwitch = null;
         }
         this.enemyIntro = null;
+        this.enemyReveal = null;
+        this.serverCheck = null;
         this.enemyFigure.close();
+        this.bridgeFigure.close();
         this.headerPortal.close();
         if (this.battle != null) {
             // Its anchors' textures go with it; the tab starts it again if the screen comes back.

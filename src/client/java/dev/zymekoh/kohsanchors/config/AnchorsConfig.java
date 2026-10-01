@@ -178,8 +178,8 @@ public final class AnchorsConfig {
         public boolean herziumIntro = true;
 
         // ------------------------------------------------------------------------------------
-        // Advanced, not secure. Off by default, behind two warnings, and only active in
-        // singleplayer, on the local network and on servers the player allowed one by one.
+        // Anchors Server. The anchor chain options are off by default and only act where a
+        // server's bridge allows them (or in singleplayer, where the world is the player's).
         // ------------------------------------------------------------------------------------
 
         /**
@@ -195,10 +195,20 @@ public final class AnchorsConfig {
         public boolean instantDetonation = false;
 
         /**
-         * Servers where the player allowed the advanced options, for this session only: nothing
-         * about where they were accepted is ever written to disk.
+         * Better glow enemy anchors: with a server's bridge, the server says who placed each
+         * anchor, so a placement of the player's never shows as an enemy's and the other way
+         * round.
          */
-        public transient List<String> allowedServers = new ArrayList<>();
+        public boolean betterEnemyGlow = true;
+
+        /**
+         * The real round trip, measured by pinging the server's bridge once a second, for every wait
+         * that depends on the connection, instead of the player list's figure.
+         */
+        public boolean bridgeLatency = true;
+
+        /** The player accepted the window on what the mod is and what its bridge adds. */
+        public boolean entryAccepted = false;
 
         /** Development view: internal names, the credit line and the screen inspector. */
         public boolean devMode = false;
@@ -223,11 +233,6 @@ public final class AnchorsConfig {
             this.anchorDebounceMillis = clamp(this.anchorDebounceMillis, 0, MAX_DEBOUNCE_MILLIS);
             this.glowstoneDebounceMillis = clamp(this.glowstoneDebounceMillis, 0, MAX_DEBOUNCE_MILLIS);
             this.anchorSmoke = clamp(this.anchorSmoke, 0, 2);
-            if (this.allowedServers == null) {
-                this.allowedServers = new ArrayList<>();
-            }
-            this.allowedServers.replaceAll(address -> address == null ? "" : address.trim().toLowerCase(Locale.ROOT));
-            this.allowedServers.removeIf(String::isEmpty);
             if (this.skin == null) {
                 this.skin = new Skin();
             }
@@ -334,7 +339,8 @@ public final class AnchorsConfig {
 
     /** Anchors other players placed: only their glow colour is theirs. */
     public static final class EnemyGlow {
-        public boolean enabled = true;
+        /** Enemy anchors: off by default, so every anchor looks like the player's own. */
+        public boolean enabled = false;
         public int color = 0xFFFF3B4E;
     }
 

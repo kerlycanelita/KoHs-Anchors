@@ -171,6 +171,21 @@ public final class AnchorTracker {
         }
     }
 
+    /**
+     * The server's bridge said who placed the anchor at this block, the moment the server accepted
+     * the placement: that is final, whatever the acknowledgements suggested. It usually arrives just
+     * before the block itself, which then keeps this owner.
+     */
+    public static void serverOwner(long key, boolean own) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        ensureLevel(level);
+        OWNERS.remove(key);
+        track(key, own ? OWN : ENEMY);
+    }
+
     /** Once a client tick: forget what left, and now and then look for anchors chunks brought. */
     public static void tick(Minecraft minecraft) {
         ClientLevel level = minecraft.level;

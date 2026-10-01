@@ -72,6 +72,15 @@ final class AnchorFigure {
     /** The same; {@code turn} false keeps it still, as when two looks of it are drawn one frame. */
     boolean draw(GuiGraphicsExtractor graphics, float centerX, float centerY, float scale, float alpha, float enemy,
             boolean motion, boolean surroundings, boolean turn) {
+        return draw(graphics, centerX, centerY, scale, alpha, enemy, motion, surroundings, turn, 0, 0.0F);
+    }
+
+    /**
+     * The same, its glow pulled towards {@code tint} by {@code tintAmount}: the bridge's anchor turns
+     * green when the server answers, and the enemy's stays red while their glow is off.
+     */
+    boolean draw(GuiGraphicsExtractor graphics, float centerX, float centerY, float scale, float alpha, float enemy,
+            boolean motion, boolean surroundings, boolean turn, int tint, float tintAmount) {
         long now = System.nanoTime();
         float frameMillis = Math.min(50.0F, (now - this.lastFrame) / 1_000_000.0F);
         this.lastFrame = now;
@@ -82,7 +91,8 @@ final class AnchorFigure {
             return alpha <= 0.01F;
         }
         AnchorsConfig.Glow glow = AnchorsConfig.settings().glow;
-        int color = color(enemy);
+        int color = tintAmount > 0.0F ? AnchorsTheme.lerp(0xFF000000 | color(enemy), 0xFF000000 | tint, tintAmount) & 0xFFFFFF
+                : color(enemy);
         float charge = this.cube.charge() / 4.0F;
         float power = Math.min(1.4F, glow.power / 100.0F * (glow.chargeScaling ? 0.4F + 0.6F * charge : 1.0F));
         boolean glowing = glow.enabled && power > 0.0F;
@@ -101,7 +111,7 @@ final class AnchorFigure {
         this.cube.layout(centerX, centerY, scale);
         // The lit pixels shine in the glow's colour: faintly for the player's own anchors, whose
         // pixels keep their colours, fully for an enemy's, which the world recolours.
-        float lift = glowing ? (0.18F + 0.47F * enemy) * Math.min(1.0F, power) : 0.0F;
+        float lift = glowing ? (0.18F + 0.47F * Math.max(enemy, tintAmount)) * Math.min(1.0F, power) : 0.0F;
         this.cube.draw(graphics, alpha, AnchorTextures.GLOW, 0.0F, lift, color);
         return true;
     }

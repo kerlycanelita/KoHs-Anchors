@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.0 — unreleased
+
+The server bridge: the anchor chain only where a server allows it, and what a server can add.
+
+### Anchors Server (new tab)
+
+- **The server bridge.** On every server the tab checks for the
+  [KoHs Anchor's Bridge](https://github.com/kerlycanelita/KoHs-Anchors-Bridge) plugin: an anchor falls
+  into a window and, while the server is asked, rings scan it and packets run to a small server. With
+  a bridge its glow turns green and it hops into the tab's column; without one everything turns red, a
+  padlock falls on it and the window says which server does not allow the anchor chain and why. In
+  singleplayer the bridge is built in. The bridge talks through Fabric API's networking.
+- **The anchor chain moves here** (the no-wait chain and the instant detonation click): it only acts
+  where the server's bridge allows it. The per-server allowing and its two warnings are gone: only the
+  server's admin can allow it.
+- **Better glow enemy anchors** (new): the server says who placed each anchor, so one of yours never
+  shows as an enemy's, even when you share the same hole.
+- **Real latency** (new): a ping to the bridge once a second, used by every wait that depends on the
+  connection.
+- Each option, switched on, plays what it does over the anchor column.
+
+### Entry
+
+- Opening the settings, an anchor charges and explodes into anchors and glowstone. The first time, a
+  window says what the mod is and links the [legitimacy audit](docs/audits/legitimacy.md) and the
+  plugin, a second one says what the bridge adds and points at "Switch to enemy Anchor's", and the
+  switch calls attention to itself once.
+
+### Enemy anchors
+
+- Now a switch, off by default. Off, their page is only the switch and their red anchor; switched on,
+  the anchor flies into its column and the tabs and options come in behind it.
+
+### Advanced
+
+- A normal tab in a deeper purple, with developer mode only.
+
 ## 0.4.0 — 2026-09-30
 
 Your anchor, your light, and clicks in Vanilla's own tick shape. Measured on 26.2 against Grim, then
