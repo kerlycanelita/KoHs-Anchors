@@ -60,6 +60,8 @@ final class EntrySequence {
     private float linkHover;
     private long lastFrame = this.phaseAt;
     private AnchorsLayout.Rect linkRect = AnchorsLayout.Rect.EMPTY;
+    /** The window as last drawn, fitted to its text: clicks use the same rectangles. */
+    private AnchorsLayout.InfoModal modal;
 
     /**
      * @param accepted the windows were accepted before: only the animation, and only with motion
@@ -103,7 +105,7 @@ final class EntrySequence {
             case INTRO -> afterIntro();
             case LOADING -> enter(Phase.DONE);
             case LEGIT, MORE -> {
-                AnchorsLayout.InfoModal modal = AnchorsLayout.infoModal(width, height);
+                AnchorsLayout.InfoModal modal = this.modal != null ? this.modal : AnchorsLayout.infoModal(width, height);
                 if (this.linkRect.contains(mouseX, mouseY)) {
                     this.openLink.accept(ServerCheckWindow.PLUGIN_URL);
                 } else if (modal.cancel().contains(mouseX, mouseY)) {
@@ -251,9 +253,9 @@ final class EntrySequence {
             double seconds, float response) {
         boolean legit = this.phase == Phase.LEGIT;
         float open = this.motion ? AnchorsTheme.easeOutCubic(t / (WINDOW_OPEN_NANOS / 1_000_000_000.0F)) : 1.0F;
-        AnchorsLayout.InfoModal modal = AnchorsLayout.infoModal(width, height);
-        AnchorsLayout.Rect full = modal.box();
-        AnchorsLayout.Rect box = full;
+        AnchorsLayout.InfoModal modal = fitted(font, width, height, legit);
+        this.modal = modal;
+        AnchorsLayout.Rect box = modal.box();
         float grow = 0.92F + 0.08F * open;
         int boxWidth = Math.round(box.width() * grow);
         int boxHeight = Math.round(box.height() * grow);
@@ -284,24 +286,11 @@ final class EntrySequence {
         AnchorsLayout.Rect content = modal.content();
         int y = content.y() + 3;
         int bottom = content.bottom();
-        if (legit) {
-            // The body in capitals, as the window is meant to be read: loud.
-            Component body = Component.literal(Component.translatable("kohs_anchors.entry.legit.body").getString()
-                    .toUpperCase(Locale.ROOT));
-            y = paragraph(graphics, font, body, content, y, bottom, AnchorsTheme.TEXT);
-            y += 3;
-            Component plugin = Component.literal(Component.translatable("kohs_anchors.entry.legit.plugin").getString()
-                    .toUpperCase(Locale.ROOT));
-            y = paragraph(graphics, font, plugin, content, y, bottom, 0xFFE9D5FF);
-            y += 3;
-            y = paragraph(graphics, font, Component.translatable("kohs_anchors.entry.legit.rules"), content, y, bottom,
-                    AnchorsTheme.TEXT_DIM);
-        } else {
-            y = paragraph(graphics, font, Component.translatable("kohs_anchors.entry.more.body"), content, y, bottom,
-                    AnchorsTheme.TEXT);
-            y += 3;
-            y = paragraph(graphics, font, Component.translatable("kohs_anchors.entry.more.enemy",
-                    Component.translatable("kohs_anchors.enemy.switch")), content, y, bottom, 0xFFFF9AB0);
+        Component[] texts = paragraphs(legit);
+        int[] colors = legit ? new int[] {AnchorsTheme.TEXT, 0xFFE9D5FF, AnchorsTheme.TEXT_DIM}
+                : new int[] {AnchorsTheme.TEXT, 0xFFFF9AB0};
+        for (int index = 0; index < texts.length; index++) {
+            y = paragraph(graphics, font, texts[index], content, y, bottom, colors[index]) + 3;
         }
         // The plugin's page, as a link under the text.
         String link = "› " + Component.translatable("kohs_anchors.entry.plugin_link").getString();
@@ -332,6 +321,48 @@ final class EntrySequence {
                 "Settings.entryAccepted", "audit " + AUDIT_URL, "plugin " + ServerCheckWindow.PLUGIN_URL);
     }
 
+    /** The body of a window: the legitimacy text in capitals, or the bridge's and the enemy switch's. */
+    private static Component[] paragraphs(boolean legit) {
+        if (legit) {
+            return new Component[] {
+                    Component.literal(Component.translatable("kohs_anchors.entry.legit.body").getString().toUpperCase(Locale.ROOT)),
+                    Component.literal(Component.translatable("kohs_anchors.entry.legit.plugin").getString().toUpperCase(Locale.ROOT)),
+                    Component.translatable("kohs_anchors.entry.legit.rules")};
+        }
+        return new Component[] {Component.translatable("kohs_anchors.entry.more.body"),
+                Component.translatable("kohs_anchors.entry.more.enemy", Component.translatable("kohs_anchors.enemy.switch"))};
+    }
+
+    /**
+     * The explaining window, as tall as its text needs: the title, the paragraphs, the plugin's link
+     * and the buttons, centred; never taller than the full window.
+     */
+    private static AnchorsLayout.InfoModal fitted(Font font, int width, int height, boolean legit) {
+        AnchorsLayout.InfoModal full = AnchorsLayout.infoModal(width, height);
+        int padding = full.padding();
+        int textWidth = Math.max(40, full.content().width());
+        int lines = 0;
+        for (Component paragraph : paragraphs(legit)) {
+            lines += font.split(paragraph, textWidth).size();
+        }
+        int gap = full.small() ? 3 : 6;
+        int contentHeight = 3 + lines * 10 + 3 * 3 + 4 + 11 + 14;
+        int boxHeight = Math.min(full.box().height(),
+                padding + full.title().height() + gap + contentHeight + (full.small() ? 4 : 8) + full.cancel().height() + padding);
+        AnchorsLayout.Rect wide = full.box();
+        AnchorsLayout.Rect box = new AnchorsLayout.Rect(wide.x(), (height - boxHeight) / 2, wide.width(), boxHeight);
+        AnchorsLayout.Rect title = new AnchorsLayout.Rect(box.x() + padding, box.y() + padding, box.width() - padding * 2,
+                full.title().height());
+        int buttonY = box.bottom() - padding - full.cancel().height();
+        AnchorsLayout.Rect cancel = new AnchorsLayout.Rect(full.cancel().x(), buttonY, full.cancel().width(), full.cancel().height());
+        AnchorsLayout.Rect confirm = new AnchorsLayout.Rect(full.confirm().x(), buttonY, full.confirm().width(),
+                full.confirm().height());
+        int contentTop = title.bottom() + gap;
+        AnchorsLayout.Rect content = new AnchorsLayout.Rect(box.x() + padding, contentTop, box.width() - padding * 2,
+                Math.max(0, buttonY - (full.small() ? 4 : 8) - contentTop));
+        return new AnchorsLayout.InfoModal(box, title, content, cancel, confirm, padding, full.small());
+    }
+
     private static int paragraph(GuiGraphicsExtractor graphics, Font font, Component text, AnchorsLayout.Rect content, int y,
             int bottom, int color) {
         List<FormattedCharSequence> lines = font.split(text, Math.max(40, content.width()));
@@ -349,8 +380,8 @@ final class EntrySequence {
     private void drawLoading(GuiGraphicsExtractor graphics, Font font, int centerX, int centerY, float t, double seconds,
             float alpha) {
         float progress = AnchorsTheme.clamp01(t / (LOADING * 0.8F));
-        int radius = 18;
-        int dots = 24;
+        int radius = 28;
+        int dots = 32;
         for (int dot = 0; dot < dots; dot++) {
             double angle = dot * Math.PI * 2.0D / dots - Math.PI / 2.0D;
             boolean lit = dot < Math.round(progress * dots);
@@ -358,7 +389,10 @@ final class EntrySequence {
             int py = centerY + (int) Math.round(Math.sin(angle) * radius);
             graphics.fill(px - 1, py - 1, px + 1, py + 1, AnchorsTheme.withAlpha(lit ? 0xE9D5FF : 0x3A1560, Math.round(255 * alpha)));
         }
-        AnchorsUi.miniAnchor(graphics, centerX - 4, centerY - 4, 4.0F * progress, alpha);
+        if (alpha > 0.2F) {
+            this.blocks.draw(graphics, this.anchor.withCharge(Math.min(4, Math.round(progress * 4.0F))), centerX, centerY,
+                    17.0F, 225.0F + (float) (seconds * 140.0D), -24.0F);
+        }
         String word = Component.translatable("kohs_anchors.entry.loading").getString().toUpperCase(Locale.ROOT);
         AnchorsUi.label(graphics, font, word, centerX - font.width(word) / 2, centerY + radius + 6,
                 AnchorsTheme.withAlpha(0xD8B4FE, Math.round(255 * alpha)), false);
