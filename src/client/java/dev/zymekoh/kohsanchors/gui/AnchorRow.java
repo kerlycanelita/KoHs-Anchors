@@ -165,10 +165,13 @@ abstract class AnchorRow extends AbstractButton {
         if (tagWidth > 0) {
             int tagX = textX + font.width(label) + 5;
             if (tagX + tagWidth < controlLeft - 4) {
-                AnchorsUi.panel(graphics, tagX, labelY - 2, tagWidth, 12, AnchorsTheme.fade(0xC0500A1E, fade),
-                        AnchorsTheme.fade(0xC02A0510, fade));
-                AnchorsUi.roundedOutline(graphics, tagX, labelY - 2, tagWidth, 12, AnchorsTheme.fade(AnchorsTheme.CRIMSON_BRIGHT, fade));
-                AnchorsUi.label(graphics, font, this.tag, tagX + 4, labelY, AnchorsTheme.fade(0xFFFFD6DE, fade), false);
+                // Crimson on a danger card (a locked option); the bridge's green on any other.
+                AnchorsUi.panel(graphics, tagX, labelY - 2, tagWidth, 12, AnchorsTheme.fade(this.danger ? 0xC0500A1E : 0xC00A3A20, fade),
+                        AnchorsTheme.fade(this.danger ? 0xC02A0510 : 0xC0062414, fade));
+                AnchorsUi.roundedOutline(graphics, tagX, labelY - 2, tagWidth, 12,
+                        AnchorsTheme.fade(this.danger ? AnchorsTheme.CRIMSON_BRIGHT : 0xFF3BFF8A, fade));
+                AnchorsUi.label(graphics, font, this.tag, tagX + 4, labelY,
+                        AnchorsTheme.fade(this.danger ? 0xFFFFD6DE : 0xFFD6FFE6, fade), false);
             }
         }
         int lineY = labelY + 13;

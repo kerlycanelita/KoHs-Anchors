@@ -690,7 +690,7 @@ public final class AnchorsScreen extends Screen {
                     if (next) {
                         this.optionFx = new OptionFx(fx);
                     }
-                }, !available, tag, option, details));
+                }, !BridgeClient.allows(policyBit), tag, option, details));
     }
 
     private String bridgeBadge() {
