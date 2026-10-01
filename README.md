@@ -154,22 +154,30 @@ the same against Grim in its strict configuration ([0.4.0 notes](docs/research/a
 
 ![KoHs Anchor's next to Herzium, before and after](docs/images/herzium-before-after.png)
 
-## Advanced options (not secure)
+## Anchors Server: the server bridge
 
-The crimson **Advanced · not secure** tab holds two options that are off by default. They change
-when your clicks reach the server, so anticheats such as Grim may flag them and many servers
-forbid them.
+The **Anchors Server** tab talks to the server's bridge, the
+[KoHs Anchor's Bridge](https://github.com/kerlycanelita/KoHs-Anchors-Bridge) plugin (Paper, Spigot,
+Bukkit, Purpur, Folia, Velocity and BungeeCord, one jar for 1.21.11 to 26.3). Opening it checks the
+server: an anchor falls into a window and turns green and hops into the tab with a bridge, or turns
+red under a padlock without one. In singleplayer the bridge is built in. It talks through Fabric API.
 
-- **No-wait chain**: clicks on an exploding anchor go out at once instead of waiting for the
-  server, and the next anchor, its charge and its explosion are drawn at once. It never places a
-  glowstone block where an anchor should be and never stacks anchors.
-- **Instant detonation click**: a click that detonates an anchor is sent the moment you press
-  it, between game ticks, up to 50 ms sooner.
+- **Anchor chain**, off by default and only where the server's bridge allows it:
+  - **No-wait chain**: clicks on an exploding anchor go out at once instead of waiting for the
+    server, and the next anchor, its charge and its explosion are drawn at once. It never places a
+    glowstone block where an anchor should be and never stacks anchors.
+  - **Instant detonation click**: a click that detonates an anchor is sent the moment you press
+    it, between game ticks, up to 50 ms sooner.
 
-Turning one on takes two warnings. Even then they only act in singleplayer, on your local network
-and on servers you allow one by one; anywhere else they stay suspended and you are asked once per
-connection. Where you allowed them is never saved. The fair-play and anticheat analysis of each is
-in [advanced-options-0.3.0.md](docs/research/advanced-options-0.3.0.md).
+  Both change when your clicks reach the server, so only the server's admin can allow them, and the
+  bridge can tell Grim through its API that they are allowed there. The player can never allow a
+  server.
+- **Better glow enemy anchors**: the server says who placed each anchor, so one of yours never shows
+  as an enemy's.
+- **Real latency**: a ping to the bridge once a second for every wait that depends on the connection.
+
+Every feature, what it sends and how it was measured: the
+[legitimacy audit](docs/audits/legitimacy.md).
 
 ## What it never does
 
@@ -189,8 +197,9 @@ at a container are left entirely to Vanilla.
 
 With [Mod Menu](https://modrinth.com/mod/modmenu) installed, open *Mods → KoHs Anchor's*. The
 screen is black-purple glass over a transparent veil with an anchor sigil turning behind it, in
-seven tabs: General, Anchor custom, Glow anchors, Sounds, the crimson Advanced · not secure,
-Herzium and KoHs; the header's switch turns it to the enemy's side, with three tabs of its own, and
+eight tabs: General, Anchor custom, Glow anchors, Sounds, Anchors Server, Advanced (developer mode, in
+a deeper purple), Herzium and KoHs; the header's switch turns it to the enemy's side (only their
+switch while enemy anchors are off, three tabs of their own once on), and
 its mark is a small Nether portal turning on itself. Beside the options, a real respawn anchor drawn by the game's own block renderer
 turns inside a ritual circle that lights a node for every charge (drag to turn it, scroll to zoom,
 click to charge it), above this session's numbers. Every animation can be turned off with
