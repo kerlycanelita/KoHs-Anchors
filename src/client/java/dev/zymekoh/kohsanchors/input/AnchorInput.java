@@ -689,11 +689,13 @@ public final class AnchorInput {
         if (main.is(Items.RESPAWN_ANCHOR) && !anchorDrawn && landsInPlace(minecraft, target)) {
             AnchorVeil.predict(level, target, AnchorVeil.anchor(0), AnchorVeil.anchor(0));
             heldDrawn = true;
+            AnchorStats.drawnHeldClick();
         } else if (main.is(Items.GLOWSTONE) && anchorDrawn
                 && drawn.getValue(RespawnAnchorBlock.CHARGE) < RespawnAnchorBlock.MAX_CHARGES) {
             int charge = drawn.getValue(RespawnAnchorBlock.CHARGE) + 1;
             AnchorVeil.predict(level, target, AnchorVeil.anchor(charge), AnchorVeil.anchor(charge));
             heldDrawn = true;
+            AnchorStats.drawnHeldClick();
         }
     }
 

@@ -45,6 +45,8 @@ public final class AtlasSkin {
     private static int generation;
     private static WeakReference<Object> topAnimation = new WeakReference<>(null);
     private static final Map<AnchorVariant, int[]> COMPOSED = new EnumMap<>(AnchorVariant.class);
+    /** The enemy's skin: never written into the atlas, drawn over their anchors (EnemySkinRenderer). */
+    private static final Map<AnchorVariant, int[]> COMPOSED_ENEMY = new EnumMap<>(AnchorVariant.class);
     /** What each sprite holds now, to rewrite only the sprites whose pixels changed. */
     private static final Map<AnchorVariant, int[]> WRITTEN = new EnumMap<>(AnchorVariant.class);
     private static int composedStamp = Integer.MIN_VALUE;
@@ -88,6 +90,7 @@ public final class AtlasSkin {
             texturesStale = false;
             generation++;
             COMPOSED.clear();
+            COMPOSED_ENEMY.clear();
             composedStamp = Integer.MIN_VALUE;
         }
         return textures;
@@ -108,13 +111,33 @@ public final class AtlasSkin {
         if (current == null) {
             return null;
         }
+        refreshComposed();
+        return COMPOSED.computeIfAbsent(variant, key -> current.compose(key, AnchorsConfig.settings().skin));
+    }
+
+    /** The enemy's skinned pixels of {@code variant}, all frames; the originals with their skin off. */
+    public static int[] composedEnemy(AnchorVariant variant) {
+        SkinComposer current = composer();
+        if (current == null) {
+            return null;
+        }
+        refreshComposed();
+        return COMPOSED_ENEMY.computeIfAbsent(variant, key -> current.compose(key, AnchorsConfig.settings().enemySkin, true));
+    }
+
+    /** One profile's pixels: the player's, or the enemy's. */
+    public static int[] composed(AnchorVariant variant, boolean enemy) {
+        return enemy ? composedEnemy(variant) : composed(variant);
+    }
+
+    private static void refreshComposed() {
         int stamp = stamp();
         if (stamp != composedStamp) {
             COMPOSED.clear();
+            COMPOSED_ENEMY.clear();
             composedStamp = stamp;
             generation++;
         }
-        return COMPOSED.computeIfAbsent(variant, key -> current.compose(key, AnchorsConfig.settings().skin));
     }
 
     /** Once a client tick: writes the skin when it changed, or the originals when it was turned off. */

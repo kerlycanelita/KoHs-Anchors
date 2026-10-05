@@ -31,6 +31,8 @@ does, so that admins can judge it.
 | No stacked anchors | A double press with the same item joins the first | Fewer packets | Input fix |
 | Anchor and glowstone debounce, glowstone guard (off by default) | The player's own repeated or misplaced clicks are refused | Fewer packets | Input fix |
 | Instant detonation effects | The explosion's sound and flash play at the press | Nothing | Cosmetic |
+| Held clicks drawn at the press | The anchor or charge a waiting click will make is drawn when it is pressed | Nothing: the click is still sent after the server's removal | Cosmetic |
+| Anchor fade, enemy skin, amethyst wall | Drawn on the client only | Nothing | Cosmetic |
 | Hide the detonated anchor, debris, smoke | Drawn on the client until the server confirms | Nothing | Cosmetic |
 | Anchor skin, glow, enemy colours, sounds | Drawn and played on the client only | Nothing | Cosmetic |
 | Herzium link | Talks to Herzium inside the same client | Nothing | Client only |

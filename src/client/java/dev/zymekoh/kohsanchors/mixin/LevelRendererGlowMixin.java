@@ -21,6 +21,7 @@ abstract class LevelRendererGlowMixin {
     @Inject(method = "submitBlockEntities", at = @At("TAIL"))
     private void kohsAnchors$glow(PoseStack poses, LevelRenderState state, SubmitNodeCollector collector,
             CallbackInfo callback) {
+        dev.zymekoh.kohsanchors.glow.EnemySkinRenderer.submit(poses, collector, state.cameraRenderState.pos);
         AnchorGlowRenderer.submit(poses, collector, state.cameraRenderState.pos, state.cameraRenderState.orientation);
         dev.zymekoh.kohsanchors.predict.AnchorFade.submit(poses, collector, state.cameraRenderState.pos);
     }

@@ -43,21 +43,33 @@ public final class SkinPaint {
         revision++;
     }
 
-    /** The grid of {@code face} at {@code resolution}, loaded from its files the first time. */
+    /** The player's own grid of {@code face} at {@code resolution}. */
     public static Grid grid(AnchorVariant.Face face, int resolution) {
-        String key = key(face, resolution);
+        return grid(false, face, resolution);
+    }
+
+    /**
+     * The grid of {@code face} at {@code resolution}, of the player's anchors or ({@code enemy})
+     * of the enemy's, loaded from its files the first time.
+     */
+    public static Grid grid(boolean enemy, AnchorVariant.Face face, int resolution) {
+        String key = (enemy ? "enemy/" : "") + key(face, resolution);
         Grid grid = GRIDS.get(key);
         if (grid == null) {
-            grid = load(face, resolution);
+            grid = load(enemy, face, resolution);
             GRIDS.put(key, grid);
         }
         return grid;
     }
 
-    /** Whether any face at {@code resolution} has paint or moved pixels. */
+    /** Whether any of the player's faces at {@code resolution} has paint or moved pixels. */
     public static boolean anyAt(int resolution) {
+        return anyAt(false, resolution);
+    }
+
+    public static boolean anyAt(boolean enemy, int resolution) {
         for (AnchorVariant.Face face : AnchorVariant.Face.values()) {
-            if (!grid(face, resolution).isEmpty()) {
+            if (!grid(enemy, face, resolution).isEmpty()) {
                 return true;
             }
         }
@@ -76,8 +88,12 @@ public final class SkinPaint {
 
     /** Clears the paint and the moved pixels of every face at {@code resolution}. */
     public static void clear(int resolution) {
+        clear(false, resolution);
+    }
+
+    public static void clear(boolean enemy, int resolution) {
         for (AnchorVariant.Face face : AnchorVariant.Face.values()) {
-            Grid grid = grid(face, resolution);
+            Grid grid = grid(enemy, face, resolution);
             java.util.Arrays.fill(grid.frame, 0);
             java.util.Arrays.fill(grid.glow, 0);
             java.util.Arrays.fill(grid.layer, AUTO);
@@ -90,15 +106,17 @@ public final class SkinPaint {
         return face.name().toLowerCase(java.util.Locale.ROOT) + "_" + resolution;
     }
 
-    private static Path folder() {
-        return AnchorsConfig.directory().resolve("skin");
+    /** The player's paint in {@code skin/}, the enemy's in {@code skin/enemy/}. */
+    private static Path folder(boolean enemy) {
+        Path skin = AnchorsConfig.directory().resolve("skin");
+        return enemy ? skin.resolve("enemy") : skin;
     }
 
-    private static Grid load(AnchorVariant.Face face, int resolution) {
-        Grid grid = new Grid(face, resolution);
-        Path frame = folder().resolve(key(face, resolution) + "_frame.png");
-        Path glow = folder().resolve(key(face, resolution) + "_glow.png");
-        Path layers = folder().resolve(key(face, resolution) + "_layers.png");
+    private static Grid load(boolean enemy, AnchorVariant.Face face, int resolution) {
+        Grid grid = new Grid(face, resolution, enemy);
+        Path frame = folder(enemy).resolve(key(face, resolution) + "_frame.png");
+        Path glow = folder(enemy).resolve(key(face, resolution) + "_glow.png");
+        Path layers = folder(enemy).resolve(key(face, resolution) + "_layers.png");
         readInto(frame, resolution, (index, argb) -> grid.frame[index] = ((argb >>> 24) & 255) == 0 ? 0 : argb);
         readInto(glow, resolution, (index, argb) -> grid.glow[index] = ((argb >>> 24) & 255) == 0 ? 0 : argb);
         readInto(layers, resolution, (index, argb) -> {
@@ -133,11 +151,11 @@ public final class SkinPaint {
     }
 
     private static void save(Grid grid) {
-        Path frame = folder().resolve(key(grid.face, grid.resolution) + "_frame.png");
-        Path glow = folder().resolve(key(grid.face, grid.resolution) + "_glow.png");
-        Path layers = folder().resolve(key(grid.face, grid.resolution) + "_layers.png");
+        Path frame = folder(grid.enemy).resolve(key(grid.face, grid.resolution) + "_frame.png");
+        Path glow = folder(grid.enemy).resolve(key(grid.face, grid.resolution) + "_glow.png");
+        Path layers = folder(grid.enemy).resolve(key(grid.face, grid.resolution) + "_layers.png");
         try {
-            Files.createDirectories(folder());
+            Files.createDirectories(folder(grid.enemy));
             if (grid.isEmpty()) {
                 Files.deleteIfExists(frame);
                 Files.deleteIfExists(glow);
@@ -171,6 +189,8 @@ public final class SkinPaint {
     public static final class Grid {
         public final AnchorVariant.Face face;
         public final int resolution;
+        /** Whether this is the enemy's paint, saved apart from the player's. */
+        public final boolean enemy;
         /** The frame layer's paint, ARGB per pixel; 0 where nothing is painted. */
         public final int[] frame;
         /** The glow layer's paint. */
@@ -179,9 +199,10 @@ public final class SkinPaint {
         public final byte[] layer;
         private boolean dirty;
 
-        Grid(AnchorVariant.Face face, int resolution) {
+        Grid(AnchorVariant.Face face, int resolution, boolean enemy) {
             this.face = face;
             this.resolution = resolution;
+            this.enemy = enemy;
             this.frame = new int[resolution * resolution];
             this.glow = new int[resolution * resolution];
             this.layer = new byte[resolution * resolution];

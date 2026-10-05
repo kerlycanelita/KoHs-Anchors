@@ -42,6 +42,8 @@ final class AnchorCube {
 
     /** Each cube keeps its own texture, so the workshop's and the enemy preview's never clash. */
     private final Identifier textureId;
+    /** Drawn with the enemy's skin and paint instead of the player's. */
+    private final boolean enemy;
     private DynamicTexture texture;
     private int resolution;
     private int builtGeneration = Integer.MIN_VALUE;
@@ -69,6 +71,11 @@ final class AnchorCube {
     }
 
     AnchorCube(String name) {
+        this(name, false);
+    }
+
+    AnchorCube(String name, boolean enemy) {
+        this.enemy = enemy;
         this.textureId = Identifier.fromNamespaceAndPath(KoHsAnchorsClient.MOD_ID, "workshop/" + name);
         for (int index = 0; index < 6; index++) {
             this.faces[index] = new Matrix3x2f();
@@ -145,9 +152,9 @@ final class AnchorCube {
             byte[] built = new byte[size * size];
             AnchorVariant variant = variants[column];
             AnchorTextures.Texture source = textures.get(variant);
-            int[] composed = AtlasSkin.composed(variant);
+            int[] composed = AtlasSkin.composed(variant, this.enemy);
             SkinPaint.Grid grid = source.width == size && source.height == size
-                    ? SkinPaint.grid(variant.face(), size) : null;
+                    ? SkinPaint.grid(this.enemy, variant.face(), size) : null;
             int area = source.area();
             int useFrame = variant == AnchorVariant.TOP ? Math.min(frame, source.frames - 1) : 0;
             for (int y = 0; y < size; y++) {

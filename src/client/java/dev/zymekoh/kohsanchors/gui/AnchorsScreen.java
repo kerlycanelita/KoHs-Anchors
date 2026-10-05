@@ -9,6 +9,7 @@ import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
 import dev.zymekoh.kohsanchors.glow.AnchorTracker;
 import dev.zymekoh.kohsanchors.input.AnchorDebounce;
 import dev.zymekoh.kohsanchors.input.AnchorStats;
+import dev.zymekoh.kohsanchors.predict.Latency;
 import dev.zymekoh.kohsanchors.integration.CrystalPalette;
 import dev.zymekoh.kohsanchors.integration.HerziumBridge;
 import dev.zymekoh.kohsanchors.safety.ServerLock;
@@ -174,7 +175,7 @@ public final class AnchorsScreen extends Screen {
     private EnemyIntro enemyIntro;
     private EnemySwitch enemySwitch;
     /** The enemy's anchor, as the world draws it: on the enemy page and in the switch. */
-    private final AnchorFigure enemyFigure = new AnchorFigure("enemy");
+    private final AnchorFigure enemyFigure = new AnchorFigure("enemy", true);
     private boolean figureDragging;
     private double figureDragDistance;
     private DevModeWarning devWarning;
@@ -260,9 +261,15 @@ public final class AnchorsScreen extends Screen {
         this.rowOffsets.clear();
         this.sections.clear();
         this.enemyPicker = null;
-        if (this.tab == ANCHOR) {
+        if (workshopTab()) {
+            // The player's anchor and the enemy's share the workshop; each keeps its own skin and paint.
+            boolean enemyWorkshop = this.tab == ENEMY_COLOURS;
+            if (this.workshop != null && this.workshop.enemy() != enemyWorkshop) {
+                this.releases.add(this.workshop::close);
+                this.workshop = null;
+            }
             if (this.workshop == null) {
-                this.workshop = new AnchorWorkshop(this);
+                this.workshop = new AnchorWorkshop(this, enemyWorkshop);
                 AnchorsLayout.Rect body = this.layout.body();
                 float fromX = this.previousPreviewX >= 0.0F ? this.previousPreviewX : body.centerX();
                 float fromY = this.previousPreviewY >= 0.0F ? this.previousPreviewY : body.centerY();
@@ -313,18 +320,17 @@ public final class AnchorsScreen extends Screen {
             case HERZIUM -> offset = buildHerzium(offset);
             case SERVER -> offset = buildServer(offset);
             case ENEMY_GLOW -> offset = buildEnemyGlow(offset);
-            case ENEMY_COLOURS -> offset = buildEnemyColours(offset);
             default -> offset = buildAdvanced(offset);
         }
         this.statsOffset = -1;
-        if (!this.layout.showsPreview() && this.tab != ENEMY_COLOURS) {
+        if (!this.layout.showsPreview() && this.tab != ENEMY_GLOW) {
             // Without the anchor column the session numbers move to the end of the list.
             offset = section(offset, "kohs_anchors.stats.title");
             this.statsOffset = offset - SECTION_HEIGHT;
             offset += STAT_LINE * 5;
         }
-        if (this.tab == ENEMY_COLOURS) {
-            // The colours tab ends in a full colour picker, as tall as the tab has room for.
+        if (this.tab == ENEMY_GLOW && settings().enemyGlow.enabled) {
+            // The glow tab ends in a full colour picker for the enemy's glow, as tall as there is room for.
             int pickerHeight = Math.max(ColorPicker.minHeight() + 20, Math.min(170, this.layout.options.height() - offset - 6));
             this.enemyPicker = new ColorPicker(() -> settings().enemyGlow.color, color -> {
                 settings().enemyGlow.color = color | 0xFF000000;
@@ -339,6 +345,11 @@ public final class AnchorsScreen extends Screen {
 
     private int enemyPickerOffset;
     private int enemyPickerHeight;
+
+    /** The tabs whose page is the workshop: the player's anchor, and the enemy's skin. */
+    private boolean workshopTab() {
+        return this.tab == ANCHOR || this.tab == ENEMY_COLOURS && !enemyOff();
+    }
 
     private int buildGeneral(int offset) {
         AnchorsConfig.Settings settings = settings();
@@ -389,6 +400,9 @@ public final class AnchorsScreen extends Screen {
         offset = section(offset, "kohs_anchors.section.core");
         offset = note(offset, "core", () -> Component.translatable("kohs_anchors.core.badge").getString(),
                 AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, hold + drawHeld, mergesRepeat",
+                "held " + AnchorStats.heldClicks() + " · drawn at the press " + AnchorStats.drawnHeldClicks()
+                        + " · dropped " + AnchorStats.droppedClicks() + " · wait " + Latency.answerWindowNanos(700_000_000L,
+                        1_500_000_000L) / 1_000_000L + " ms",
                 "DetonationPredictor.showAtInput / onAnchorUsed", "Settings fields transient: not saved");
         offset = section(offset, "kohs_anchors.section.interface");
         offset = toggle(offset, "interface_motion", () -> settings.interfaceMotion, value -> settings.interfaceMotion = value,
@@ -474,18 +488,11 @@ public final class AnchorsScreen extends Screen {
                 default -> "kohs_anchors.glow_quality.balanced";
             }).getString().toUpperCase(Locale.ROOT);
         }, settings().glow.enabled ? AnchorsTheme.ACCENT_BRIGHT : AnchorsTheme.TEXT_DIM,
-                "AnchorGlowRenderer: one Glow for every anchor", "Draw.override = EnemyGlow.color: the colour only");
-        return offset;
-    }
-
-    /** The enemy's colour: a full picker, and a word when their own colour is off. */
-    private int buildEnemyColours(int offset) {
-        AnchorsConfig.EnemyGlow enemy = settings().enemyGlow;
+                "AnchorGlowRenderer: one Glow for every anchor", "Draw.override = EnemyGlow.color: the colour only",
+                "EnemySkinRenderer: " + (dev.zymekoh.kohsanchors.glow.EnemySkinRenderer.active() ? "on" : "off")
+                        + " · drawn " + dev.zymekoh.kohsanchors.glow.EnemySkinRenderer.drawn()
+                        + " · fading " + dev.zymekoh.kohsanchors.predict.AnchorFade.active());
         offset = section(offset, "kohs_anchors.section.enemy_colour");
-        if (!enemy.enabled) {
-            offset = note(offset, "enemy_colour_off", () -> Component.translatable("kohs_anchors.state.off").getString(),
-                    AnchorsTheme.TEXT_DIM, "EnemyGlow.enabled = false: enemy anchors take the player's colour");
-        }
         return offset;
     }
 
@@ -1111,7 +1118,7 @@ public final class AnchorsScreen extends Screen {
                 * (1.0F - (float) Math.exp(-frameMillis / 70.0F));
         drawHeader(graphics, intro, seconds);
         drawTabs(graphics, pointerX, pointerY, intro, seconds, frameMillis, motion);
-        if (this.tab == ANCHOR && this.workshop != null) {
+        if (workshopTab() && this.workshop != null) {
             this.workshop.render(graphics, this.font, pointerX, pointerY, motion, seconds, intro);
         } else if (this.tab == KOHS && this.kohsPage != null) {
             this.kohsPage.render(graphics, this.font, this.layout.body(), pointerX, pointerY, intro);
@@ -1488,7 +1495,7 @@ public final class AnchorsScreen extends Screen {
             int iconColor = AnchorsTheme.fade(selected || hover > 0.5F
                     ? (danger ? 0xFFFF6A86 : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.ACCENT_BRIGHT)
                     : (danger ? 0xFFB8243F : intense ? 0xFFC77DFF : AnchorsTheme.SILVER), contentAlpha);
-            drawTabIcon(graphics, index, startX, iconY, iconSize, iconColor);
+            TabIcons.draw(graphics, index, startX, iconY, iconSize, contentAlpha, hover, selected, seconds, motion);
             if (!iconOnly) {
                 int textColor = selected ? AnchorsTheme.TITLE : AnchorsTheme.lerp(AnchorsTheme.TEXT_MUTED, AnchorsTheme.TEXT, hover);
                 if (danger && !selected) {
@@ -1507,7 +1514,8 @@ public final class AnchorsScreen extends Screen {
                 AnchorsUi.diamond(graphics, rect.right() - 5, rect.y() + 4, 2, emberColor);
             }
             DevInspector.node("Tab", TAB_KEYS[index], full.x(), full.y(), full.width(), full.height(),
-                    "AnchorsLayout.tab(" + slot + ", " + tabs.length + ")", selected ? "selected" : "", iconOnly ? "icon only" : "");
+                    "AnchorsLayout.tab(" + slot + ", " + tabs.length + ")", TabIcons.describe(index),
+                    selected ? "selected" : "", iconOnly ? "icon only" : "");
         }
     }
 
@@ -1531,7 +1539,7 @@ public final class AnchorsScreen extends Screen {
         int contentWidth = iconSize + (iconOnly ? 0 : 4 + this.font.width(label));
         int startX = rect.x() + (rect.width() - contentWidth) / 2;
         int iconY = rect.y() + (rect.height() - iconSize) / 2;
-        drawTabIcon(graphics, HERZIUM, startX, iconY, iconSize, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro));
+        TabIcons.draw(graphics, HERZIUM, startX, iconY, iconSize, intro * (0.45F + 0.3F * hover), hover, false, seconds, motion);
         if (!iconOnly) {
             AnchorsUi.label(graphics, this.font, label, startX + iconSize + 4, rect.y() + (rect.height() - 8) / 2,
                     AnchorsTheme.fade(AnchorsTheme.lerp(0xFF6E6880, AnchorsTheme.TEXT_MUTED, hover), intro), false);
@@ -1548,39 +1556,6 @@ public final class AnchorsScreen extends Screen {
                 "FabricLoader.isModLoaded(\"herzium\") = false", "click: HerziumWindow(MISSING)");
     }
 
-    /**
-     * The tab's block: the anchor, crying obsidian for its skin, glowstone, an amethyst cluster for
-     * the sounds, a lodestone for the server, netherite, nether gold for Herzium, amethyst for
-     * KoHs; for the enemy's tabs shroomlight, crimson nylium and gilded blackstone. Drawn by the
-     * block's own texture, scaled to the tab.
-     */
-    private static void drawTabIcon(GuiGraphicsExtractor graphics, int index, int x, int y, int size, int color) {
-        if (index < 0 || index >= TAB_BLOCKS.length) {
-            return;
-        }
-        // The block's own texture, flat: item stacks cannot be made before a world binds their
-        // components, and this screen opens from the title screen too.
-        graphics.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, TAB_BLOCKS[index], x, y, 0.0F, 0.0F,
-                size, size, 16, 16, 16, 16);
-        int dim = 255 - (color >>> 24);
-        if (dim > 40) {
-            // A faded tab (the intro, Herzium missing): its block fades with it.
-            graphics.fill(x, y, x + size, y + size, AnchorsTheme.withAlpha(0x0A0412, Math.min(200, dim)));
-        }
-    }
-
-    private static final net.minecraft.resources.Identifier[] TAB_BLOCKS = {
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/respawn_anchor_side4.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/crying_obsidian.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/glowstone.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/amethyst_cluster.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/lodestone_top.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/netherite_block.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/nether_gold_ore.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/amethyst_block.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/shroomlight.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/crimson_nylium.png"),
-            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/gilded_blackstone.png")};
 
     private void drawOptions(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, long now,
             boolean motion, double seconds) {
@@ -2009,7 +1984,7 @@ public final class AnchorsScreen extends Screen {
                 return true;
             }
         }
-        if (this.tab == ANCHOR && this.workshop != null) {
+        if (workshopTab() && this.workshop != null) {
             if (this.workshop.mouseClicked(mouseX, mouseY, button)) {
                 return true;
             }
@@ -2067,7 +2042,7 @@ public final class AnchorsScreen extends Screen {
             this.draggingSlider.dragTo(event.x());
             return true;
         }
-        if (this.tab == ANCHOR && this.workshop != null) {
+        if (workshopTab() && this.workshop != null) {
             if (this.workshop.mouseDragged(event.x(), event.y(), dragX, dragY)) {
                 return true;
             }
@@ -2105,7 +2080,7 @@ public final class AnchorsScreen extends Screen {
             this.draggingSlider = null;
             return true;
         }
-        if (this.tab == ANCHOR && this.workshop != null) {
+        if (workshopTab() && this.workshop != null) {
             if (this.workshop.mouseReleased()) {
                 return true;
             }
@@ -2133,7 +2108,7 @@ public final class AnchorsScreen extends Screen {
             // Nothing on the KoHs page or the battle scrolls.
             return true;
         }
-        if (this.tab == ANCHOR && this.workshop != null) {
+        if (workshopTab() && this.workshop != null) {
             return this.workshop.mouseScrolled(mouseX, mouseY, verticalAmount);
         }
         if (!enemyPage && this.anchorPreview.mouseScrolled(this.previewArt, mouseX, mouseY, verticalAmount)) {
@@ -2195,7 +2170,7 @@ public final class AnchorsScreen extends Screen {
         if (this.enemyPicker != null && this.enemyPicker.keyPressed(key)) {
             return true;
         }
-        if (this.tab == ANCHOR && this.workshop != null
+        if (workshopTab() && this.workshop != null
                 && this.workshop.keyPressed(key, (event.modifiers() & Keys.CONTROL) != 0)) {
             return true;
         }
@@ -2219,7 +2194,7 @@ public final class AnchorsScreen extends Screen {
         if (this.enemyPicker != null && this.enemyPicker.charTyped(character)) {
             return true;
         }
-        if (this.tab == ANCHOR && this.workshop != null && this.workshop.charTyped(character)) {
+        if (workshopTab() && this.workshop != null && this.workshop.charTyped(character)) {
             return true;
         }
         return super.charTyped(event);
@@ -2281,12 +2256,16 @@ public final class AnchorsScreen extends Screen {
                 settings.glowstoneDebounceMillis = defaults.glowstoneDebounceMillis;
                 settings.glowstoneGuard = defaults.glowstoneGuard;
                 settings.anchorSmoke = defaults.anchorSmoke;
+                settings.anchorFade = defaults.anchorFade;
                 AnchorDebounce.settingsChanged();
             }
             case ANCHOR -> settings.skin = defaults.skin;
             case GLOW -> settings.glow = defaults.glow;
-            case ENEMY_GLOW -> settings.enemyGlow.enabled = defaults.enemyGlow.enabled;
-            case ENEMY_COLOURS -> settings.enemyGlow.color = defaults.enemyGlow.color;
+            case ENEMY_GLOW -> {
+                settings.enemyGlow.enabled = defaults.enemyGlow.enabled;
+                settings.enemyGlow.color = defaults.enemyGlow.color;
+            }
+            case ENEMY_COLOURS -> settings.enemySkin = defaults.enemySkin;
             case SOUNDS -> {
                 settings.chargeSound = defaults.chargeSound;
                 settings.explosionSound = defaults.explosionSound;

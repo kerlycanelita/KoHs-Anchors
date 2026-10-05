@@ -99,4 +99,24 @@ public final class AnchorBlockPreview {
         this.block.blockState = blockState;
         return this.state;
     }
+
+    /**
+     * A block drawn on its own in the world, lit by the world around it: the anchor fade's copy of
+     * a detonated anchor. Opaque to the shared code, whose versions build it differently.
+     */
+    public static Object worldBlock(net.minecraft.client.multiplayer.ClientLevel level, BlockPos position,
+            net.minecraft.world.level.block.state.BlockState blockState) {
+        MovingBlockRenderState block = new MovingBlockRenderState();
+        block.blockPos = position.immutable();
+        block.randomSeedPos = block.blockPos;
+        block.blockState = blockState;
+        block.level = level;
+        return block;
+    }
+
+    /** Submits {@link #worldBlock} in the block's own space of {@code poses}. */
+    public static void submitWorldBlock(com.mojang.blaze3d.vertex.PoseStack poses,
+            net.minecraft.client.renderer.SubmitNodeCollector collector, Object block) {
+        collector.submitMovingBlock(poses, (MovingBlockRenderState) block);
+    }
 }

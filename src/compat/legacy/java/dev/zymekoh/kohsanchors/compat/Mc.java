@@ -28,4 +28,9 @@ public final class Mc {
     /** 1.21.11 draws subtitles with the HUD, not from the screen background. */
     public static void extractDeferredSubtitles(Minecraft minecraft) {
     }
+
+    /** Block and sky light, 0 to 15, packed as the renderers take them. */
+    public static int packLight(int block, int sky) {
+        return net.minecraft.client.renderer.LightTexture.pack(block, sky);
+    }
 }

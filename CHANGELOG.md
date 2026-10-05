@@ -21,6 +21,37 @@ The server bridge: the anchor chain only where a server allows it, and what a se
   connection.
 - Each option, switched on, plays what it does over the anchor column.
 
+### Core: clicks that never feel heavy
+
+- **Held clicks are drawn at the press.** A click on an anchor that is still exploding waits for the
+  server's removal, as before, so the server and its anticheat see exactly what they saw; what it will
+  do, the next anchor in the old one's place or one more charge, is now drawn the moment it is
+  pressed, instead of nothing until the removal and then the whole cycle at once. Nothing is drawn
+  when the click could land elsewhere, and what was drawn is taken back if the click is dropped.
+- **The wait follows the connection.** A held click waits three round trips and a quarter second, 0.7
+  to 1.5 s; the fixed 0.7 s dropped the clicks of players on 200 ms or of a lagging server.
+- **Hide detonated anchor** is part of the core now: always on, corrected by the server's answer.
+- Measured in the anchor lab (26.2, Grim, the pvp kit, Herzium last input, 0 to 150 ms): anchor spam
+  at one action per tick, charges 30 and 10 ms apart with 4 to 6 extra clicks on the exploding anchor
+  and whole cycles inside one tick all land 100 % of the time, with no click wasted and no Grim alert.
+  Only a robot's click every 20 ms loses cycles (30 to 50 %), as 0.4.0 did.
+
+### General
+
+- **Anchor fade** (new, on by default): a detonated anchor shrinks, turns and sinks away over half a
+  second instead of vanishing in one frame. Drawing only: the next anchor goes down in its place at
+  once and the fade stops when it does.
+- The preview stands in front of an **amethyst wall**: an explosion breaks a ragged crater into it,
+  shards flying, and two seconds later the blocks pull themselves back in, the rim first.
+
+### Interface
+
+- **Living tab icons**: the respawn anchor charges and flares, the skin tab's anchor runs through
+  colours, glowstone and shroomlight burn, a jukebox's music note bobs and throws more notes, ancient
+  debris and gilded blackstone catch the light. Herzium and KoHs keep their own icons; the server tab
+  shows the server list's signal bars, green on a server whose bridge approves the mod, sweeping while
+  it is asked, red where it is missing, grey off a server.
+
 ### Entry
 
 - Opening the settings, an anchor charges and explodes into anchors and glowstone. The first time, a
@@ -32,6 +63,10 @@ The server bridge: the anchor chain only where a server allows it, and what a se
 
 - Now a switch, off by default. Off, their page is only the switch and their red anchor; switched on,
   the anchor flies into its column and the tabs and options come in behind it.
+- **Their own skin**: the Skin tab (was Colours) is the workshop for the enemy's anchor, with its own
+  colours, charge lights and pixel painting, saved apart from yours (`config/kohs_anchors/skin/enemy/`).
+  Their anchors are drawn with it in the world, a hair over the block; "Use mine" starts from your
+  colours. Their glow colour moved to the Glow tab.
 
 ### Advanced
 

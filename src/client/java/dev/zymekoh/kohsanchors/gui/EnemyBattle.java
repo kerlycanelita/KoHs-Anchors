@@ -93,7 +93,8 @@ final class EnemyBattle {
     private final Random random = new Random(0x4B6F4853L);
     private final List<Fighter> fighters = new ArrayList<>();
     private final List<Shot> shots = new ArrayList<>();
-    private final AnchorCube[] cubes = new AnchorCube[5];
+    /** One cube per charge for each side: the player's skin, then the enemy's. */
+    private final AnchorCube[] cubes = new AnchorCube[10];
     private final Matrix3x2f face = new Matrix3x2f();
     private final float[] rotation = new float[9];
     private final int[] score = new int[2];
@@ -817,7 +818,7 @@ final class EnemyBattle {
         if (fighter.placed < 0.0F || fighter.down >= 0.0F) {
             return;
         }
-        AnchorCube cube = cube(fighter.charge);
+        AnchorCube cube = cube(fighter.charge, fighter.enemy);
         boolean animateTop = this.motion && (cube.resolution() == 0 || cube.resolution() <= 64);
         if (!cube.prepare(animateTop)) {
             return;
@@ -854,11 +855,12 @@ final class EnemyBattle {
         graphics.pose().popMatrix();
     }
 
-    private AnchorCube cube(int charge) {
-        int index = Math.max(0, Math.min(4, charge));
+    private AnchorCube cube(int charge, boolean enemy) {
+        int clamped = Math.max(0, Math.min(4, charge));
+        int index = clamped + (enemy ? 5 : 0);
         if (this.cubes[index] == null) {
-            this.cubes[index] = new AnchorCube("battle_" + index);
-            this.cubes[index].setCharge(index);
+            this.cubes[index] = new AnchorCube((enemy ? "battle_enemy_" : "battle_") + clamped, enemy);
+            this.cubes[index].setCharge(clamped);
         }
         return this.cubes[index];
     }

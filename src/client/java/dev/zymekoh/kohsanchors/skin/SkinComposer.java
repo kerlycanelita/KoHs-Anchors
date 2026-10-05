@@ -52,11 +52,16 @@ public final class SkinComposer {
      * {@link AnchorTextures.Texture#pixels}. With the skin off, the original pixels.
      */
     public int[] compose(AnchorVariant variant, AnchorsConfig.Skin skin) {
+        return compose(variant, skin, false);
+    }
+
+    /** The same, with the enemy's paint when {@code enemy}: their anchors have a skin of their own. */
+    public int[] compose(AnchorVariant variant, AnchorsConfig.Skin skin, boolean enemy) {
         AnchorTextures.Texture texture = this.textures.get(variant);
         if (!skin.enabled) {
             return texture.pixels;
         }
-        SkinPaint.Grid grid = SkinPaint.grid(variant.face(), texture.width);
+        SkinPaint.Grid grid = SkinPaint.grid(enemy, variant.face(), texture.width);
         if (texture.height != texture.width) {
             grid = null;
         }
@@ -146,6 +151,10 @@ public final class SkinComposer {
 
     /** The average colour of a group after the skin, for the glow's automatic colour. */
     public int averageGlowColor(AnchorsConfig.Skin skin, int charge) {
+        return averageGlowColor(skin, charge, false);
+    }
+
+    public int averageGlowColor(AnchorsConfig.Skin skin, int charge, boolean enemy) {
         AnchorVariant variant = charge > 0 ? AnchorVariant.side(charge) : AnchorVariant.SIDE0;
         double r = 0;
         double g = 0;
@@ -153,9 +162,9 @@ public final class SkinComposer {
         double weight = 0;
         for (AnchorVariant source : new AnchorVariant[] {AnchorVariant.TOP, variant}) {
             AnchorTextures.Texture texture = this.textures.get(source);
-            int[] pixels = compose(source, skin);
+            int[] pixels = compose(source, skin, enemy);
             int area = texture.area();
-            SkinPaint.Grid grid = skin.enabled ? SkinPaint.grid(source.face(), texture.width) : null;
+            SkinPaint.Grid grid = skin.enabled ? SkinPaint.grid(enemy, source.face(), texture.width) : null;
             for (int index = 0; index < area; index++) {
                 if (layerOf(texture, grid, index) != AnchorTextures.GLOW) {
                     continue;

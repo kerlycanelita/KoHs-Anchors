@@ -1,17 +1,18 @@
 package dev.zymekoh.kohsanchors.predict;
 
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.math.Axis;
+import dev.zymekoh.kohsanchors.compat.AnchorBlockPreview;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
+import dev.zymekoh.kohsanchors.glow.AnchorTracker;
+import dev.zymekoh.kohsanchors.glow.EnemySkinRenderer;
 import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.renderer.SubmitNodeCollector;
-import net.minecraft.client.renderer.block.MovingBlockRenderState;
-import net.minecraft.client.renderer.entity.state.EntityRenderState;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
@@ -39,13 +40,10 @@ public final class AnchorFade {
             FADES.remove(0);
         }
         // Each fade keeps its own state: the collector holds it until the frame is drawn.
-        MovingBlockRenderState block = new MovingBlockRenderState();
-        block.blockPos = position.immutable();
-        block.randomSeedPos = block.blockPos;
-        block.blockState = state;
-        block.cardinalLighting = level.cardinalLighting();
-        block.lightEngine = level.getLightEngine();
-        FADES.add(new Fade(level, block, System.nanoTime()));
+        Object block = AnchorBlockPreview.worldBlock(level, position, state);
+        // An enemy's anchor fades in their skin, as it was drawn.
+        boolean enemy = AnchorTracker.anchors().get(position.asLong()) == AnchorTracker.ENEMY;
+        FADES.add(new Fade(level, position.immutable(), block, System.nanoTime(), enemy, state.getValue(RespawnAnchorBlock.CHARGE)));
     }
 
     /** With the frame's block entities, relative to the camera, like the glow. */
@@ -55,19 +53,26 @@ public final class AnchorFade {
         }
         ClientLevel level = Minecraft.getInstance().level;
         long now = System.nanoTime();
-        FADES.removeIf(fade -> fade.level != level || now - fade.since > FADE_NANOS || anchorAgain(level, fade.block.blockPos));
+        FADES.removeIf(fade -> fade.level != level || now - fade.since > FADE_NANOS || anchorAgain(level, fade.position));
         for (Fade fade : FADES) {
             float progress = (now - fade.since) / (float) FADE_NANOS;
             // Slow at first, as if it held on, then gone: what is left of it sinks and turns.
             float scale = 1.0F - progress * progress;
-            BlockPos position = fade.block.blockPos;
+            BlockPos position = fade.position;
             poses.pushPose();
             poses.translate(position.getX() - camera.x + 0.5D, position.getY() - camera.y - 0.2D * progress,
                     position.getZ() - camera.z + 0.5D);
-            poses.mulPose(Axis.YP.rotationDegrees(40.0F * progress * progress));
+            // Turned through the pose's own matrices: PoseStack's rotation helpers differ between versions.
+            float turn = (float) Math.toRadians(40.0F * progress * progress);
+            poses.last().pose().rotateY(turn);
+            poses.last().normal().rotateY(turn);
             poses.scale(scale, scale, scale);
             poses.translate(-0.5D, 0.0D, -0.5D);
-            collector.submitMovingBlock(poses, fade.block, EntityRenderState.NO_OUTLINE);
+            if (fade.enemy && EnemySkinRenderer.active()) {
+                EnemySkinRenderer.submitCube(poses, collector, fade.level, position, fade.charge, false);
+            } else {
+                AnchorBlockPreview.submitWorldBlock(poses, collector, fade.block);
+            }
             poses.popPose();
         }
     }
@@ -79,6 +84,11 @@ public final class AnchorFade {
                 : level != null && level.getBlockState(position).is(Blocks.RESPAWN_ANCHOR);
     }
 
-    private record Fade(ClientLevel level, MovingBlockRenderState block, long since) {
+    /** Anchors fading right now, for developer mode. */
+    public static int active() {
+        return FADES.size();
+    }
+
+    private record Fade(ClientLevel level, BlockPos position, Object block, long since, boolean enemy, int charge) {
     }
 }

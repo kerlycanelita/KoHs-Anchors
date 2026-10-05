@@ -29,7 +29,7 @@ import org.joml.Vector3f;
 final class AnchorPreview {
     private static final Identifier AMETHYST = Identifier.withDefaultNamespace("textures/block/amethyst_block.png");
     /** Tiles of the wall the blast breaks, from the anchor out, with a ragged edge. */
-    private static final float CRATER_RADIUS = 1.9F;
+    private static final float CRATER_RADIUS = 4.1F;
     /** The crater stays open two seconds, then the wall retracts back into place. */
     private static final float CRATER_OPEN = 2.0F;
     private static final float CRATER_CLOSE = 0.35F;
@@ -237,14 +237,14 @@ final class AnchorPreview {
     }
 
     /**
-     * The amethyst wall behind the anchor, one block per tile with a dark seam between them. A
+     * The amethyst wall behind the anchor, one block per tile, edge to edge like a wall in the world. A
      * detonation shatters the tiles around the anchor into the ragged crater an anchor blast
      * leaves, shards flying out; two seconds later the broken blocks retract back into place, the
      * rim first. Plain textured quads, a few dozen a frame: no block models, no extra pass.
      */
     private void drawWall(GuiGraphicsExtractor graphics, AnchorsLayout.Rect area, int centerX, int centerY, int size,
             long now, float intro) {
-        int tile = Math.max(10, Math.round(size / 4.5F));
+        int tile = Math.max(6, Math.round(size / 9.0F));
         float crater = -1.0F;
         if (this.craterAt >= 0L) {
             float age = (now - this.craterAt) / 1_000_000_000.0F;
@@ -271,9 +271,9 @@ final class AnchorPreview {
                 int hash = column * 73856093 ^ row * 19349663;
                 float noise = (hash >>> 8 & 255) / 255.0F;
                 float whole = 1.0F;
-                if (crater >= 0.0F && distance + noise * 0.9F < CRATER_RADIUS) {
+                if (crater >= 0.0F && distance + noise * 1.3F < CRATER_RADIUS) {
                     // The rim closes first, the centre last: the wall pulls itself back in.
-                    float closeAt = CRATER_OPEN + 0.12F * Math.max(0.0F, distance);
+                    float closeAt = CRATER_OPEN + 0.08F * Math.max(0.0F, CRATER_RADIUS - distance);
                     if (crater < closeAt) {
                         whole = 1.0F - Mth.clamp(crater / 0.16F, 0.0F, 1.0F);
                         if (crater < 0.55F && distance > 0.01F) {
@@ -287,11 +287,12 @@ final class AnchorPreview {
                     continue;
                 }
                 // Darker towards the edges and block by block, so the anchor stands out in front.
-                float shade = (0.42F + 0.4F * (1.0F - Mth.clamp(distance / reach, 0.0F, 1.0F))) * (0.88F + 0.12F * noise);
+                float shade = (0.42F + 0.4F * (1.0F - Mth.clamp(distance / reach, 0.0F, 1.0F))) * (0.95F + 0.05F * noise);
                 int channel = Math.round(255 * Mth.clamp(shade, 0.0F, 1.0F));
                 int color = alpha << 24 | channel << 16 | Math.round(channel * 0.86F) << 8 | channel;
-                int drawn = Math.max(1, Math.round((tile - 1) * Math.min(whole, 1.08F)));
-                int offset = (tile - 1 - drawn) / 2;
+                // Whole blocks touch: one wall, no seams. Only the breaking and returning ones shrink.
+                int drawn = whole >= 0.999F && whole <= 1.001F ? tile : Math.max(1, Math.round(tile * Math.min(whole, 1.08F)));
+                int offset = (tile - drawn) / 2;
                 graphics.blit(RenderPipelines.GUI_TEXTURED, AMETHYST, x + offset, y + offset, 0.0F, 0.0F, drawn, drawn,
                         16, 16, 16, 16, color);
             }
@@ -300,10 +301,19 @@ final class AnchorPreview {
             // The scorched hollow, glowing hot at first and cooling while it stays open.
             float cool = Mth.clamp(crater / CRATER_OPEN, 0.0F, 1.0F);
             float open = 1.0F - Mth.clamp((crater - CRATER_OPEN) / CRATER_CLOSE, 0.0F, 1.0F);
-            AnchorsUi.glowEllipse(graphics, centerX, centerY, Math.round(tile * CRATER_RADIUS), Math.round(tile * CRATER_RADIUS * 0.92F),
-                    AnchorsTheme.lerp(0xFF8A3D, 0x2A0A3A, cool) & 0xFFFFFF, 0.55F * open * intro);
+            int radius = Math.round(tile * (CRATER_RADIUS - 0.4F));
+            // A scorched hollow behind the wall, its rim glowing hot at first and cooling while it stays open.
+            AnchorsUi.ellipse(graphics, centerX, centerY, radius, Math.round(radius * 0.92F),
+                    AnchorsTheme.withAlpha(0x07030C, Math.round(170 * open * intro)));
+            AnchorsUi.glowEllipse(graphics, centerX, centerY, radius, Math.round(radius * 0.92F),
+                    AnchorsTheme.lerp(0xFF8A3D, 0x5A1A8A, cool) & 0xFFFFFF, 0.35F * open * intro);
         }
         graphics.disableScissor();
+        DevInspector.node("Wall", "amethyst wall", area.x(), area.y(), area.width(), area.height(),
+                "AnchorPreview.drawWall: " + columns + "×" + rows + " tiles of " + tile + " px, edge to edge",
+                crater < 0.0F ? "whole" : "crater " + String.format(java.util.Locale.ROOT, "%.2f", crater) + " s · open "
+                        + CRATER_OPEN + " s, retracts in " + CRATER_CLOSE + " s",
+                "blit textures/block/amethyst_block.png");
     }
 
     /** A shard of a broken block, thrown out of the crater and fading. */

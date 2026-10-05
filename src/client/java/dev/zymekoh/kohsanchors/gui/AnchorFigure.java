@@ -20,7 +20,12 @@ final class AnchorFigure {
     private long lastTouch;
 
     AnchorFigure(String name) {
-        this.cube = new AnchorCube(name);
+        this(name, false);
+    }
+
+    /** An enemy's figure draws their skin, as their anchors are drawn in a fight. */
+    AnchorFigure(String name, boolean enemy) {
+        this.cube = new AnchorCube(name, enemy);
         this.cube.setCharge(4);
     }
 

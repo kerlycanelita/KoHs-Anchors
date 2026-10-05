@@ -37,4 +37,9 @@ public final class Mc {
     public static void extractDeferredSubtitles(Minecraft minecraft) {
         minecraft.gui.hud.extractDeferredSubtitles();
     }
+
+    /** Block and sky light, 0 to 15, packed as the renderers take them. */
+    public static int packLight(int block, int sky) {
+        return net.minecraft.util.LightCoordsUtil.pack(block, sky);
+    }
 }

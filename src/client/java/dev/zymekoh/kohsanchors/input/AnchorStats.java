@@ -47,6 +47,17 @@ public final class AnchorStats {
     }
 
     /** Clicks that waited for the server to remove a detonated anchor instead of hitting it. */
+    private static int drawnHeldClicks;
+
+    /** Held clicks whose outcome was drawn the moment they were pressed. */
+    public static int drawnHeldClicks() {
+        return drawnHeldClicks;
+    }
+
+    public static void drawnHeldClick() {
+        drawnHeldClicks++;
+    }
+
     public static int heldClicks() {
         return heldClicks;
     }

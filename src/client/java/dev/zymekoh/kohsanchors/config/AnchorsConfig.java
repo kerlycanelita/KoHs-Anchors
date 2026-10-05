@@ -225,6 +225,9 @@ public final class AnchorsConfig {
         // ------------------------------------------------------------------------------------
 
         public Skin skin = new Skin();
+
+        /** The enemy's anchors' own skin: colours and paint, drawn over the anchors marked theirs. */
+        public Skin enemySkin = Skin.enemy();
         public Glow glow = new Glow();
         public EnemyGlow enemyGlow = new EnemyGlow();
         public AnchorSound chargeSound = AnchorSound.charge();
@@ -244,6 +247,10 @@ public final class AnchorsConfig {
                 this.skin = new Skin();
             }
             this.skin.sanitize();
+            if (this.enemySkin == null) {
+                this.enemySkin = Skin.enemy();
+            }
+            this.enemySkin.sanitize();
             if (this.glow == null) {
                 this.glow = new Glow();
             }
@@ -283,6 +290,15 @@ public final class AnchorsConfig {
 
         /** The four charge lights' colours, first to fourth. */
         public int[] charge = {0xFFFFB347, 0xFFFF8A3D, 0xFFFF5A5F, 0xFFE83EAF};
+
+        /** The enemy's starting colours: a crimson frame and a red glow, off until switched on. */
+        public static Skin enemy() {
+            Skin skin = new Skin();
+            skin.frameColor = 0xFF3A0A14;
+            skin.glowColor = 0xFFFF3B4E;
+            skin.charge = new int[] {0xFFFF6A3D, 0xFFFF4A3D, 0xFFFF2E4E, 0xFFD11F4A};
+            return skin;
+        }
 
         void sanitize() {
             this.frameStrength = clamp(this.frameStrength, 0, 100);

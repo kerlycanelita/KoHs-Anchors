@@ -46,7 +46,9 @@ final class AnchorWorkshop {
     enum Tool { BRUSH, ERASER, PICKER, FILL, LAYER }
 
     private final AnchorsScreen screen;
-    private final AnchorCube cube = new AnchorCube();
+    /** The enemy's workshop edits their skin and paint; the player's, their own. */
+    private final boolean enemy;
+    private final AnchorCube cube;
     private final ColorPicker picker;
     private final Deque<List<Change>> undo = new ArrayDeque<>();
     private final Deque<List<Change>> redo = new ArrayDeque<>();
@@ -78,7 +80,16 @@ final class AnchorWorkshop {
     private int strengthWidth;
 
     AnchorWorkshop(AnchorsScreen screen) {
+        this(screen, false);
+    }
+
+    AnchorWorkshop(AnchorsScreen screen, boolean enemy) {
         this.screen = screen;
+        this.enemy = enemy;
+        this.cube = new AnchorCube(enemy ? "workshop_enemy" : "workshop", enemy);
+        if (enemy) {
+            this.brushColor = 0xFFFF3B4E;
+        }
         this.picker = new ColorPicker(this::pickerColor, this::setPickerColor);
     }
 
@@ -102,8 +113,12 @@ final class AnchorWorkshop {
     // Colour targets
     // ------------------------------------------------------------------------------------------
 
+    boolean enemy() {
+        return this.enemy;
+    }
+
     private AnchorsConfig.Skin skin() {
-        return AnchorsConfig.settings().skin;
+        return this.enemy ? AnchorsConfig.settings().enemySkin : AnchorsConfig.settings().skin;
     }
 
     private int pickerColor() {
@@ -211,7 +226,8 @@ final class AnchorWorkshop {
             AnchorsUi.sigil(graphics, Math.round(cubeX), Math.round(cubeY + scale * 0.15F), Math.round(room * 0.47F),
                     seconds * 1.4D, AnchorsTheme.ACCENT, 0.7F * intro * (1.0F - this.modeBlend * 0.6F), charge);
         }
-        int glow = skin().enabled ? skin().glowColor : AnchorsTheme.PORTAL;
+        int glow = skin().enabled ? skin().glowColor
+                : this.enemy ? AnchorsConfig.settings().enemyGlow.color : AnchorsTheme.PORTAL;
         AnchorsUi.glowEllipse(graphics, Math.round(cubeX), Math.round(cubeY), Math.round(scale * 0.95F),
                 Math.round(scale * 0.85F), glow & 0xFFFFFF, (0.25F + 0.15F * charge) * intro);
         AnchorsUi.ellipse(graphics, Math.round(cubeX), Math.round(cubeY + scale * 0.62F), Math.round(scale * 0.55F),
@@ -376,7 +392,7 @@ final class AnchorWorkshop {
         }
         if (y + height <= rail.bottom()) {
             railButton(graphics, font, rail.x() + offset, y, rail.width(), height, "kohs_anchors.workshop.clear", "X", false,
-                    true, mouseX, mouseY, alpha, this::clearPaint, "clear", "SkinPaint.clear(resolution)");
+                    true, mouseX, mouseY, alpha, this::clearPaint, "clear", "SkinPaint.clear(this.enemy, resolution)");
         }
     }
 
@@ -384,7 +400,7 @@ final class AnchorWorkshop {
         return switch (tool) {
             case BRUSH -> "Grid.setPaint(layer, index, color): edited layer only";
             case ERASER -> "Grid.setPaint(layer, index, 0)";
-            case PICKER -> "AtlasSkin.composed(variant)[index] → brush";
+            case PICKER -> "AtlasSkin.composed(variant, enemy)[index] → brush";
             case FILL -> "every pixel of the edited layer on this face";
             case LAYER -> "Grid.setLayer(index, TO_FRAME / TO_GLOW)";
         };
@@ -417,7 +433,8 @@ final class AnchorWorkshop {
         AnchorsConfig.Skin skin = skin();
 
         // The skin's master switch.
-        String title = Component.translatable("kohs_anchors.workshop.skin").getString().toUpperCase(Locale.ROOT);
+        String title = Component.translatable(this.enemy ? "kohs_anchors.workshop.enemy_skin" : "kohs_anchors.workshop.skin")
+                .getString().toUpperCase(Locale.ROOT);
         AnchorsUi.label(graphics, font, AnchorsUi.fit(font, title, width - 34), x + 2, y + 2,
                 AnchorsTheme.fade(AnchorsTheme.SECTION, alpha), false);
         AnchorSwitchRow.drawSwitch(graphics, x + width - AnchorSwitchRow.SWITCH_WIDTH - 1, y + 1, alpha,
@@ -426,8 +443,10 @@ final class AnchorWorkshop {
             skin.enabled = !skin.enabled;
             AnchorsConfig.changed();
         }));
-        DevInspector.node("Switch", "skin.enabled", x, y, width, 12, "AnchorsConfig.Skin.enabled = " + skin.enabled,
-                "AtlasSkin.tick → AtlasWriter.write / writeFrame");
+        DevInspector.node("Switch", this.enemy ? "enemySkin.enabled" : "skin.enabled", x, y, width, 12,
+                (this.enemy ? "AnchorsConfig.enemySkin.enabled = " : "AnchorsConfig.Skin.enabled = ") + skin.enabled,
+                this.enemy ? "EnemySkinRenderer: drawn over the ENEMY anchors (textures enemy_skin), paint in skin/enemy/"
+                        : "AtlasSkin.tick → AtlasWriter.write / writeFrame");
         y += 16;
 
         // Layers: frame and glow, then the charge lights.
@@ -467,12 +486,22 @@ final class AnchorWorkshop {
         int buttonY = bottom - buttonHeight;
         int half = (width - 3) / 2;
         boolean overCrystal = mouseX >= x && mouseX < x + half && mouseY >= buttonY && mouseY < buttonY + buttonHeight;
-        AnchorsButton.draw(graphics, x, buttonY, half, buttonHeight,
-                Component.translatable("kohs_anchors.workshop.crystal").getString(), AnchorsConfig.settings().crystalColors,
-                false, overCrystal ? 1.0F : 0.0F, 0.0F, alpha, -1.0F);
-        this.hits.add(new Hit(x, buttonY, half, buttonHeight, this.screen::openCrystalColors));
-        DevInspector.node("Button", "crystal colours", x, buttonY, half, buttonHeight,
-                "CrystalPalette.read() ← config/crystal_tweaks.json", "CrystalPalette.map → Skin + Glow");
+        if (this.enemy) {
+            // The enemy's workshop starts from the player's colours instead of Crystal Tweaks'.
+            AnchorsButton.draw(graphics, x, buttonY, half, buttonHeight,
+                    Component.translatable("kohs_anchors.workshop.copy_own").getString(), false,
+                    false, overCrystal ? 1.0F : 0.0F, 0.0F, alpha, -1.0F);
+            this.hits.add(new Hit(x, buttonY, half, buttonHeight, this::copyOwnColours));
+            DevInspector.node("Button", "copy own colours", x, buttonY, half, buttonHeight,
+                    "enemySkin ← skin: colours and strengths (paint stays apart)");
+        } else {
+            AnchorsButton.draw(graphics, x, buttonY, half, buttonHeight,
+                    Component.translatable("kohs_anchors.workshop.crystal").getString(), AnchorsConfig.settings().crystalColors,
+                    false, overCrystal ? 1.0F : 0.0F, 0.0F, alpha, -1.0F);
+            this.hits.add(new Hit(x, buttonY, half, buttonHeight, this.screen::openCrystalColors));
+            DevInspector.node("Button", "crystal colours", x, buttonY, half, buttonHeight,
+                    "CrystalPalette.read() ← config/crystal_tweaks.json", "CrystalPalette.map → Skin + Glow");
+        }
         boolean overReset = mouseX >= x + half + 3 && mouseX < x + width && mouseY >= buttonY && mouseY < buttonY + buttonHeight;
         AnchorsButton.draw(graphics, x + half + 3, buttonY, width - half - 3, buttonHeight,
                 Component.translatable("kohs_anchors.workshop.reset").getString(), false, true,
@@ -696,7 +725,7 @@ final class AnchorWorkshop {
         if (texture.width != size || texture.height != size) {
             return;
         }
-        SkinPaint.Grid grid = SkinPaint.grid(variant.face(), size);
+        SkinPaint.Grid grid = SkinPaint.grid(this.enemy, variant.face(), size);
         int index = picked[2] * size + picked[1];
         if (picked[0] == this.lastPaintedFace && index == this.lastPaintedIndex) {
             return;
@@ -717,7 +746,7 @@ final class AnchorWorkshop {
                 }
             }
             case PICKER -> {
-                int[] pixels = AtlasSkin.composed(variant);
+                int[] pixels = AtlasSkin.composed(variant, this.enemy);
                 if (pixels != null) {
                     this.brushColor = pixels[index] | 0xFF000000;
                     ColorPicker.remember(this.brushColor);
@@ -778,7 +807,7 @@ final class AnchorWorkshop {
     private void clearPaint() {
         List<Change> changes = new ArrayList<>();
         for (AnchorVariant.Face face : AnchorVariant.Face.values()) {
-            SkinPaint.Grid grid = SkinPaint.grid(face, this.cube.resolution());
+            SkinPaint.Grid grid = SkinPaint.grid(this.enemy, face, this.cube.resolution());
             for (int index = 0; index < grid.frame.length; index++) {
                 if (grid.frame[index] != 0) {
                     changes.add(new Change(grid, AnchorTextures.FRAME, index, grid.frame[index], 0));
@@ -802,8 +831,27 @@ final class AnchorWorkshop {
 
     private void resetSkin() {
         // Back to the resource pack's anchor; what was painted stays, the clear tool removes it.
-        AnchorsConfig.settings().skin = new AnchorsConfig.Skin();
+        if (this.enemy) {
+            AnchorsConfig.settings().enemySkin = AnchorsConfig.Skin.enemy();
+        } else {
+            AnchorsConfig.settings().skin = new AnchorsConfig.Skin();
+        }
         AnchorsConfig.changed();
+    }
+
+    /** The player's colours, strengths and charge lights, onto the enemy's skin; switched on. */
+    private void copyOwnColours() {
+        AnchorsConfig.Skin own = AnchorsConfig.settings().skin;
+        AnchorsConfig.Skin enemySkin = AnchorsConfig.settings().enemySkin;
+        enemySkin.frameColor = own.frameColor;
+        enemySkin.frameStrength = own.frameStrength;
+        enemySkin.glowColor = own.glowColor;
+        enemySkin.glowStrength = own.glowStrength;
+        enemySkin.chargeColors = own.chargeColors;
+        enemySkin.charge = own.charge.clone();
+        enemySkin.enabled = true;
+        AnchorsConfig.changed();
+        click();
     }
 
     private static void click() {
