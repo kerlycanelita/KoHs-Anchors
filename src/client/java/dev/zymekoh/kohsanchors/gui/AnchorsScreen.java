@@ -1550,20 +1550,18 @@ public final class AnchorsScreen extends Screen {
 
     /**
      * The tab's block: the anchor, crying obsidian for its skin, glowstone, an amethyst cluster for
-     * the sounds, a lodestone for the server, netherite, magma for Herzium's speed, amethyst for
+     * the sounds, a lodestone for the server, netherite, nether gold for Herzium, amethyst for
      * KoHs; for the enemy's tabs shroomlight, crimson nylium and gilded blackstone. Drawn by the
-     * game's item renderer, scaled to the tab.
+     * block's own texture, scaled to the tab.
      */
     private static void drawTabIcon(GuiGraphicsExtractor graphics, int index, int x, int y, int size, int color) {
         if (index < 0 || index >= TAB_BLOCKS.length) {
             return;
         }
-        float scale = size / 16.0F;
-        graphics.pose().pushMatrix();
-        graphics.pose().translate(x, y);
-        graphics.pose().scale(scale, scale);
-        graphics.item(TAB_BLOCKS[index], 0, 0);
-        graphics.pose().popMatrix();
+        // The block's own texture, flat: item stacks cannot be made before a world binds their
+        // components, and this screen opens from the title screen too.
+        graphics.blit(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED, TAB_BLOCKS[index], x, y, 0.0F, 0.0F,
+                size, size, 16, 16, 16, 16);
         int dim = 255 - (color >>> 24);
         if (dim > 40) {
             // A faded tab (the intro, Herzium missing): its block fades with it.
@@ -1571,18 +1569,18 @@ public final class AnchorsScreen extends Screen {
         }
     }
 
-    private static final net.minecraft.world.item.ItemStack[] TAB_BLOCKS = {
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.RESPAWN_ANCHOR),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.CRYING_OBSIDIAN),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.GLOWSTONE),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.AMETHYST_CLUSTER),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LODESTONE),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.NETHERITE_BLOCK),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.MAGMA_BLOCK),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.AMETHYST_BLOCK),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.SHROOMLIGHT),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.CRIMSON_NYLIUM),
-            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.GILDED_BLACKSTONE)};
+    private static final net.minecraft.resources.Identifier[] TAB_BLOCKS = {
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/respawn_anchor_side4.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/crying_obsidian.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/glowstone.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/amethyst_cluster.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/lodestone_top.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/netherite_block.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/nether_gold_ore.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/amethyst_block.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/shroomlight.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/crimson_nylium.png"),
+            net.minecraft.resources.Identifier.withDefaultNamespace("textures/block/gilded_blackstone.png")};
 
     private void drawOptions(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, long now,
             boolean motion, double seconds) {
