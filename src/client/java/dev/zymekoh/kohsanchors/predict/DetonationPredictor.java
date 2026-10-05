@@ -139,6 +139,8 @@ public final class DetonationPredictor {
         long now = System.nanoTime();
         BlockPos key = position.immutable();
         DETONATING.put(key, new Detonation(now));
+        BlockState shown = AnchorVeil.predicted(key);
+        AnchorFade.start(level, key, shown != null ? shown : level.getBlockState(key));
         if (AnchorsConfig.settings().hideDetonating || ServerLock.fastChain()) {
             AnchorVeil.predict(level, key, AnchorVeil.air(), AnchorVeil.air());
         }

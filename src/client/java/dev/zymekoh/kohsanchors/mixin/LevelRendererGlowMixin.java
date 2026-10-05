@@ -22,5 +22,6 @@ abstract class LevelRendererGlowMixin {
     private void kohsAnchors$glow(PoseStack poses, LevelRenderState state, SubmitNodeCollector collector,
             CallbackInfo callback) {
         AnchorGlowRenderer.submit(poses, collector, state.cameraRenderState.pos, state.cameraRenderState.orientation);
+        dev.zymekoh.kohsanchors.predict.AnchorFade.submit(poses, collector, state.cameraRenderState.pos);
     }
 }

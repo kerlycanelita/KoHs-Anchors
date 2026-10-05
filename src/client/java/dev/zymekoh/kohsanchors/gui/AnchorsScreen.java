@@ -370,9 +370,9 @@ public final class AnchorsScreen extends Screen {
                 "FAIL before any prediction or packet · counted: " + AnchorStats.glowstoneGuarded(),
                 "GlowstoneGuardWarning: LoopingClip.SAFE_ANCHOR, then the charge"));
         offset = section(offset, "kohs_anchors.section.detonation");
-        offset = toggle(offset, "hide_detonating", () -> settings.hideDetonating, value -> settings.hideDetonating = value,
-                "AnchorVeil.predict(level, pos, AIR, AIR)", "RenderSectionRegionMixin @ getBlockState HEAD",
-                "SodiumLevelSliceMixin (@Pseudo) · VeiledOutlineMixin", "lifted on the server's state or on the ack");
+        offset = toggle(offset, "anchor_fade", () -> settings.anchorFade, value -> settings.anchorFade = value,
+                "AnchorFade.start ← DetonationPredictor.detonate", "AnchorFade.submit ← LevelRendererGlowMixin",
+                "submitMovingBlock: a shrinking copy, no block, no collision");
         offset = toggle(offset, "anchor_debris", () -> settings.anchorDebris, value -> settings.anchorDebris = value,
                 "ClientPacketListenerMixin @ handleExplosion trackExplosionEffects",
                 "DetonationPredictor.shouldDrawDebris");
@@ -388,7 +388,7 @@ public final class AnchorsScreen extends Screen {
                 "and DetonationPredictor.detonate · config anchorSmoke"));
         offset = section(offset, "kohs_anchors.section.core");
         offset = note(offset, "core", () -> Component.translatable("kohs_anchors.core.badge").getString(),
-                AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, hold, mergesRepeat",
+                AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, hold + drawHeld, mergesRepeat",
                 "DetonationPredictor.showAtInput / onAnchorUsed", "Settings fields transient: not saved");
         offset = section(offset, "kohs_anchors.section.interface");
         offset = toggle(offset, "interface_motion", () -> settings.interfaceMotion, value -> settings.interfaceMotion = value,
@@ -1477,11 +1477,11 @@ public final class AnchorsScreen extends Screen {
             }
 
             String label = this.tabLabels[index];
-            if (this.font.width(label) + 18 > full.width()) {
+            if (this.font.width(label) + 21 > full.width()) {
                 label = this.tabShortLabels[index];
             }
-            boolean iconOnly = this.font.width(label) + 18 > full.width();
-            int iconSize = 9;
+            boolean iconOnly = this.font.width(label) + 21 > full.width();
+            int iconSize = 12;
             int contentWidth = iconSize + (iconOnly ? 0 : 4 + this.font.width(label));
             int startX = full.x() + (full.width() - contentWidth) / 2;
             int iconY = full.y() + (full.height() - iconSize) / 2;
@@ -1523,11 +1523,11 @@ public final class AnchorsScreen extends Screen {
         AnchorsUi.roundedOutline(graphics, rect.x(), rect.y(), rect.width(), rect.height(),
                 AnchorsTheme.fade(AnchorsTheme.lerp(0x80463A56, 0xC08E8AA0, hover), intro));
         String label = this.tabLabels[HERZIUM];
-        if (this.font.width(label) + 18 > rect.width()) {
+        if (this.font.width(label) + 21 > rect.width()) {
             label = this.tabShortLabels[HERZIUM];
         }
-        boolean iconOnly = this.font.width(label) + 18 > rect.width();
-        int iconSize = 9;
+        boolean iconOnly = this.font.width(label) + 21 > rect.width();
+        int iconSize = 12;
         int contentWidth = iconSize + (iconOnly ? 0 : 4 + this.font.width(label));
         int startX = rect.x() + (rect.width() - contentWidth) / 2;
         int iconY = rect.y() + (rect.height() - iconSize) / 2;
@@ -1549,104 +1549,40 @@ public final class AnchorsScreen extends Screen {
     }
 
     /**
-     * Small icons drawn from pixels: sliders, the anchor, a flare, a wave, the warning sign,
-     * Herzium's H, the KoHs mark; for the enemy's tabs the flare, four colours and crossed blades.
+     * The tab's block: the anchor, crying obsidian for its skin, glowstone, an amethyst cluster for
+     * the sounds, a lodestone for the server, netherite, magma for Herzium's speed, amethyst for
+     * KoHs; for the enemy's tabs shroomlight, crimson nylium and gilded blackstone. Drawn by the
+     * game's item renderer, scaled to the tab.
      */
     private static void drawTabIcon(GuiGraphicsExtractor graphics, int index, int x, int y, int size, int color) {
-        int center = size / 2;
-        switch (index) {
-            case GENERAL -> {
-                for (int line = 0; line < 3; line++) {
-                    int ly = y + 1 + line * 3;
-                    graphics.fill(x, ly, x + size, ly + 1, AnchorsTheme.fade(color, 0.55F));
-                    int knob = x + (line == 1 ? size - 3 : line * 2 + 1);
-                    graphics.fill(knob, ly - 1, knob + 2, ly + 2, color);
-                }
-            }
-            case ANCHOR -> {
-                AnchorsUi.outline(graphics, x, y, size, size, color);
-                graphics.fill(x + 2, y + 2, x + size - 2, y + 4, AnchorsTheme.fade(color, 0.6F));
-                for (int pip = 0; pip < 3; pip++) {
-                    graphics.fill(x + 2 + pip * 2, y + size - 3, x + 3 + pip * 2, y + size - 2, color);
-                }
-            }
-            case ENEMY_COLOURS -> {
-                // Four drops of colour in a square, brighter one by one.
-                graphics.fill(x, y, x + 4, y + 4, color);
-                graphics.fill(x + 5, y, x + 9, y + 4, AnchorsTheme.fade(color, 0.8F));
-                graphics.fill(x, y + 5, x + 4, y + 9, AnchorsTheme.fade(color, 0.6F));
-                graphics.fill(x + 5, y + 5, x + 9, y + 9, AnchorsTheme.fade(color, 0.4F));
-            }
-            case ENEMY_ADVANCED -> {
-                // Two crossed blades with their guards.
-                for (int step = 0; step < size; step++) {
-                    graphics.fill(x + step, y + step, x + step + 1, y + step + 1, color);
-                    graphics.fill(x + size - 1 - step, y + step, x + size - step, y + step + 1, color);
-                }
-                graphics.fill(x, y + size - 3, x + 3, y + size - 2, AnchorsTheme.fade(color, 0.7F));
-                graphics.fill(x + size - 3, y + size - 3, x + size, y + size - 2, AnchorsTheme.fade(color, 0.7F));
-            }
-            case GLOW, ENEMY_GLOW -> {
-                AnchorsUi.diamond(graphics, x + center, y + center, 2, color);
-                graphics.fill(x + center, y, x + center + 1, y + 2, color);
-                graphics.fill(x + center, y + size - 2, x + center + 1, y + size, color);
-                graphics.fill(x, y + center, x + 2, y + center + 1, color);
-                graphics.fill(x + size - 2, y + center, x + size, y + center + 1, color);
-                graphics.fill(x + 1, y + 1, x + 2, y + 2, color);
-                graphics.fill(x + size - 2, y + 1, x + size - 1, y + 2, color);
-                graphics.fill(x + 1, y + size - 2, x + 2, y + size - 1, color);
-                graphics.fill(x + size - 2, y + size - 2, x + size - 1, y + size - 1, color);
-            }
-            case SOUNDS -> {
-                int[] heights = {3, 6, 9, 5, 7};
-                for (int bar = 0; bar < heights.length; bar++) {
-                    int barX = x + bar * 2;
-                    graphics.fill(barX, y + size - heights[bar], barX + 1, y + size, color);
-                }
-            }
-            case KOHS -> {
-                // The KoHs mark: a diamond crossed by a blade.
-                for (int row = 0; row < size; row++) {
-                    int span = center - Math.abs(row - center);
-                    graphics.fill(x + center - span, y + row, x + center - span + 1, y + row + 1, color);
-                    graphics.fill(x + center + span, y + row, x + center + span + 1, y + row + 1, color);
-                }
-                for (int step = 1; step < size - 1; step++) {
-                    graphics.fill(x + size - 1 - step, y + step, x + size - step, y + step + 1, AnchorsTheme.fade(color, 0.7F));
-                }
-            }
-            case HERZIUM -> {
-                // Speed lines running into an H, as on Herzium's own icon.
-                graphics.fill(x, y + 2, x + 3, y + 3, AnchorsTheme.fade(color, 0.55F));
-                graphics.fill(x + 1, y + 4, x + 3, y + 5, AnchorsTheme.fade(color, 0.8F));
-                graphics.fill(x, y + 6, x + 3, y + 7, AnchorsTheme.fade(color, 0.55F));
-                graphics.fill(x + 4, y, x + 5, y + size, color);
-                graphics.fill(x + size - 1, y, x + size, y + size, color);
-                graphics.fill(x + 4, y + center, x + size, y + center + 1, color);
-            }
-            case SERVER -> {
-                // A bridge: an arch over the road, two pillars under it.
-                for (int step = 1; step < size - 1; step++) {
-                    int drop = Math.abs(step - center) * 3 / 4;
-                    graphics.fill(x + step, y + 1 + drop, x + step + 1, y + 2 + drop, color);
-                }
-                graphics.fill(x + center, y + 2, x + center + 1, y + 5, AnchorsTheme.fade(color, 0.6F));
-                graphics.fill(x, y + 5, x + size, y + 6, color);
-                graphics.fill(x + 1, y + 6, x + 2, y + size, color);
-                graphics.fill(x + size - 2, y + 6, x + size - 1, y + size, color);
-            }
-            case ADVANCED -> {
-                // A cog: a ring with four teeth and a hub.
-                AnchorsUi.outline(graphics, x + 2, y + 2, size - 4, size - 4, color);
-                graphics.fill(x + center, y, x + center + 1, y + 2, color);
-                graphics.fill(x + center, y + size - 2, x + center + 1, y + size, color);
-                graphics.fill(x, y + center, x + 2, y + center + 1, color);
-                graphics.fill(x + size - 2, y + center, x + size, y + center + 1, color);
-                graphics.fill(x + center, y + center, x + center + 1, y + center + 1, color);
-            }
-            default -> AnchorsUi.warningGlyph(graphics, x + center, y, size, color, 0xFF1A0308);
+        if (index < 0 || index >= TAB_BLOCKS.length) {
+            return;
+        }
+        float scale = size / 16.0F;
+        graphics.pose().pushMatrix();
+        graphics.pose().translate(x, y);
+        graphics.pose().scale(scale, scale);
+        graphics.item(TAB_BLOCKS[index], 0, 0);
+        graphics.pose().popMatrix();
+        int dim = 255 - (color >>> 24);
+        if (dim > 40) {
+            // A faded tab (the intro, Herzium missing): its block fades with it.
+            graphics.fill(x, y, x + size, y + size, AnchorsTheme.withAlpha(0x0A0412, Math.min(200, dim)));
         }
     }
+
+    private static final net.minecraft.world.item.ItemStack[] TAB_BLOCKS = {
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.RESPAWN_ANCHOR),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.CRYING_OBSIDIAN),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.GLOWSTONE),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.AMETHYST_CLUSTER),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.LODESTONE),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.NETHERITE_BLOCK),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.MAGMA_BLOCK),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.AMETHYST_BLOCK),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.SHROOMLIGHT),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.CRIMSON_NYLIUM),
+            new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.GILDED_BLACKSTONE)};
 
     private void drawOptions(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float partialTick, long now,
             boolean motion, double seconds) {

@@ -12,18 +12,26 @@ import dev.zymekoh.kohsanchors.mixin.KeyMappingAccessor;
 import dev.zymekoh.kohsanchors.mixin.MinecraftUseInvoker;
 import dev.zymekoh.kohsanchors.predict.AnchorVeil;
 import dev.zymekoh.kohsanchors.predict.DetonationPredictor;
+import dev.zymekoh.kohsanchors.predict.Latency;
 import dev.zymekoh.kohsanchors.safety.ServerLock;
 import dev.zymekoh.kohsanchors.skin.AtlasSkin;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Options;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
+import net.minecraft.world.phys.Vec3;
+import java.util.Optional;
 
 /**
  * Makes a fast anchor burst land the way it was pressed.
@@ -89,8 +97,14 @@ public final class AnchorInput {
 
     /** At most this many clicks wait for one anchor; more than that is not a burst but a hold. */
     private static final int HOLD_CAPACITY = 6;
-    /** Longer than any removal worth waiting for; a click still waiting then is dropped. */
+    /**
+     * The shortest wait for a removal; on a slower connection the wait follows the round trip, as
+     * the veil does (three round trips and a quarter second, up to 1.5 s). A click still waiting
+     * then is dropped. A fixed 0.7 s dropped the clicks of players on 200 ms and more, or of a server
+     * whose tick lagged, which they felt as anchors that ghosted.
+     */
     private static final long HOLD_TIMEOUT_NANOS = 700_000_000L;
+    private static final long HOLD_TIMEOUT_MAX_NANOS = 1_500_000_000L;
     private static final int[] HELD_SLOTS = new int[HOLD_CAPACITY];
 
     private static boolean hotbarPointReached;
@@ -104,6 +118,8 @@ public final class AnchorInput {
     private static boolean heldForCatchUp;
     /** The held clicks' block is already free; they only wait for a tick of their own. */
     private static boolean heldCleared;
+    /** What the held clicks will do is drawn already ({@link #drawHeld}); taken back if they are dropped. */
+    private static boolean heldDrawn;
 
     /**
      * The hotbar slot the first click or attack of this client tick was sent with, or -1 before
@@ -503,9 +519,13 @@ public final class AnchorInput {
             heldFor = target.immutable();
             heldForCatchUp = catchUp;
             heldCleared = false;
+            heldDrawn = false;
         }
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
+        if (!catchUp) {
+            drawHeld(minecraft, heldFor);
+        }
         return Decision.HOLD;
     }
 
@@ -561,7 +581,8 @@ public final class AnchorInput {
                 && minecraft.level.getBlockState(heldFor).is(net.minecraft.world.level.block.Blocks.RESPAWN_ANCHOR));
         boolean cleared = heldCleared || !kept && (heldForCatchUp ? FastChain.caughtUp(minecraft.level, heldFor)
                 : !DetonationPredictor.isDetonating(heldFor));
-        if (!cleared && !kept && System.nanoTime() - heldSince < HOLD_TIMEOUT_NANOS) {
+        if (!cleared && !kept && System.nanoTime() - heldSince
+                < Latency.answerWindowNanos(HOLD_TIMEOUT_NANOS, HOLD_TIMEOUT_MAX_NANOS)) {
             return;
         }
         int count = heldCount;
@@ -571,6 +592,7 @@ public final class AnchorInput {
             if (kept) {
                 DetonationPredictor.forget(heldFor);
             }
+            takeBackDrawn(minecraft);
             return;
         }
         if (!AnchorContext.ready(minecraft) || minecraft.player == null) {
@@ -581,6 +603,7 @@ public final class AnchorInput {
         int selected = inventory.getSelectedSlot();
         int index = 0;
         boolean waitAgain = false;
+        boolean dropped = false;
         for (; index < count && AnchorContext.ready(minecraft); index++) {
             if (tickSlot >= 0 && HELD_SLOTS[index] != tickSlot) {
                 // One slot per tick: the clicks held with another item run on the next tick.
@@ -603,6 +626,7 @@ public final class AnchorInput {
                 }
                 if (!stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
                     AnchorStats.droppedClicks(1);
+                    dropped = true;
                     continue;
                 }
                 usesThisPass++;
@@ -618,6 +642,10 @@ public final class AnchorInput {
                 case RUN_PREDICTED -> runPredicted(minecraft);
                 default -> AnchorStats.droppedClicks(1);
             }
+        }
+        if (dropped) {
+            // What was drawn for them will not come now: the world is drawn as it is.
+            takeBackDrawn(minecraft);
         }
         if (index < count && AnchorContext.ready(minecraft)) {
             // Their block is free already: they wait only for a tick that has not clicked yet.
@@ -635,6 +663,87 @@ public final class AnchorInput {
         if (inventory.getSelectedSlot() != selected) {
             inventory.setSelectedSlot(selected);
         }
+    }
+
+    /**
+     * Draws what a held click will do the moment it is pressed, instead of when the server's
+     * removal lets it run: the next anchor where the exploding one stands, or one more charge in
+     * the anchor drawn there. The click itself still waits and is sent exactly as before; only the
+     * frame stops waiting, the way Vanilla draws a block the moment it is placed. Nothing is drawn
+     * when the released click could land elsewhere (the crosshair crosses the anchor towards open
+     * space, or the block behind is out of reach), and what was drawn is taken back if the click
+     * is dropped. Players who press faster than their ping saw nothing until the removal and then
+     * the whole cycle at once: that wait and that jump were the heavy, abrupt clicks.
+     */
+    private static void drawHeld(Minecraft minecraft, BlockPos target) {
+        if (!(minecraft.level instanceof ClientLevel level) || minecraft.player == null
+                || minecraft.player.isSecondaryUseActive() || DetonationPredictor.anchorsWork(level, target)) {
+            return;
+        }
+        BlockState drawn = AnchorVeil.predicted(target);
+        if (drawn == null) {
+            return;
+        }
+        ItemStack main = minecraft.player.getMainHandItem();
+        boolean anchorDrawn = drawn.is(Blocks.RESPAWN_ANCHOR);
+        if (main.is(Items.RESPAWN_ANCHOR) && !anchorDrawn && landsInPlace(minecraft, target)) {
+            AnchorVeil.predict(level, target, AnchorVeil.anchor(0), AnchorVeil.anchor(0));
+            heldDrawn = true;
+        } else if (main.is(Items.GLOWSTONE) && anchorDrawn
+                && drawn.getValue(RespawnAnchorBlock.CHARGE) < RespawnAnchorBlock.MAX_CHARGES) {
+            int charge = drawn.getValue(RespawnAnchorBlock.CHARGE) + 1;
+            AnchorVeil.predict(level, target, AnchorVeil.anchor(charge), AnchorVeil.anchor(charge));
+            heldDrawn = true;
+        }
+    }
+
+    /** Draws the world again where held clicks that were dropped had their outcome drawn. */
+    private static void takeBackDrawn(Minecraft minecraft) {
+        if (heldDrawn && heldFor != null && minecraft.level != null) {
+            AnchorVeil.lift(minecraft.level, heldFor);
+        }
+        heldDrawn = false;
+    }
+
+    /**
+     * Whether a click aimed at the anchor at {@code target} lands in its place once the anchor is
+     * gone: the crosshair's ray leaves the anchor's block into a sturdy face within reach, which
+     * the released click then hits, putting the new anchor right where the old one stood.
+     */
+    static boolean landsInPlace(Minecraft minecraft, BlockPos target) {
+        if (!(minecraft.hitResult instanceof BlockHitResult hit) || minecraft.level == null || minecraft.player == null) {
+            return false;
+        }
+        Vec3 eye = minecraft.player.getEyePosition();
+        Vec3 entry = hit.getLocation();
+        Vec3 direction = entry.subtract(eye);
+        if (direction.lengthSqr() < 1.0E-6D) {
+            return false;
+        }
+        Optional<Vec3> exit = new AABB(target).clip(entry.add(direction.normalize().scale(2.0D)), entry);
+        if (exit.isEmpty() || exit.get().distanceTo(eye) > minecraft.player.blockInteractionRange()) {
+            return false;
+        }
+        Direction face = exitFace(target, exit.get());
+        BlockPos behind = target.relative(face);
+        return !AnchorVeil.isVeiled(behind)
+                && minecraft.level.getBlockState(behind).isFaceSturdy(minecraft.level, behind, face.getOpposite());
+    }
+
+    /** The face of {@code block} that {@code point}, on its surface, lies on. */
+    private static Direction exitFace(BlockPos block, Vec3 point) {
+        double x = point.x - block.getX();
+        double y = point.y - block.getY();
+        double z = point.z - block.getZ();
+        double[] distances = {y, 1.0D - y, z, 1.0D - z, x, 1.0D - x};
+        Direction[] faces = {Direction.DOWN, Direction.UP, Direction.NORTH, Direction.SOUTH, Direction.WEST, Direction.EAST};
+        int nearest = 0;
+        for (int index = 1; index < distances.length; index++) {
+            if (Math.abs(distances[index]) < Math.abs(distances[nearest])) {
+                nearest = index;
+            }
+        }
+        return faces[nearest];
     }
 
     /**

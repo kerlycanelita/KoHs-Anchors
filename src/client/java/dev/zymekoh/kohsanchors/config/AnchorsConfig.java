@@ -133,12 +133,19 @@ public final class AnchorsConfig {
         /** Shows and plays a detonation the moment the anchor is used. */
         public transient boolean predictDetonation = true;
 
+        /**
+         * Draws a detonated anchor as gone the moment it is used, and what clicks held for the
+         * server will do; the world is not changed. Core since 0.5.0: it is what makes the clicks
+         * feel immediate, and the server's answer always corrects it.
+         */
+        public transient boolean hideDetonating = true;
+
         // ------------------------------------------------------------------------------------
         // General.
         // ------------------------------------------------------------------------------------
 
-        /** Draws a detonated anchor as gone the moment it is used; the world is not changed. */
-        public boolean hideDetonating = true;
+        /** A detonated anchor shrinks away over half a second instead of vanishing; drawing only. */
+        public boolean anchorFade = true;
 
         /** Keeps Vanilla's block debris particles for anchor explosions. */
         public boolean anchorDebris = true;
