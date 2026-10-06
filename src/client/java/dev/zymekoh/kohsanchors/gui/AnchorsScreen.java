@@ -202,6 +202,7 @@ public final class AnchorsScreen extends Screen {
     public AnchorsScreen(Screen parent) {
         super(Component.translatable("kohs_anchors.screen.title"));
         this.parent = parent;
+        AnchorMascot.install();
         this.versionLabel = FabricLoader.getInstance().getModContainer(KoHsAnchorsClient.MOD_ID)
                 .map(container -> "v" + container.getMetadata().getVersion().getFriendlyString())
                 .orElse("");
@@ -443,6 +444,10 @@ public final class AnchorsScreen extends Screen {
         offset = section(offset, "kohs_anchors.section.interface");
         offset = toggle(offset, "interface_motion", () -> settings.interfaceMotion, value -> settings.interfaceMotion = value,
                 "AnchorsScreen motion: sigil, motes, slashes, entrances");
+        offset = toggle(offset, "mascot", () -> AnchorMascot.prefs().enabled, AnchorMascot::setEnabled,
+                "AnchorMascot: Zymekoh, from KoHs Inventory Tweaks · config/kohs_anchors_mascot.json",
+                "eats only the preview's anchor (AnchorPreview → previewAnchor / anchorEaten)",
+                "plays: drops an anchor, charges it, blows it up · drawFigure in SafeAnchorWarning");
         return offset;
     }
 
@@ -887,6 +892,8 @@ public final class AnchorsScreen extends Screen {
                 this.font, state, () -> {
                     set.accept(!state.getAsBoolean());
                     AnchorsConfig.changed();
+                    // Zymekoh cheers an option on and pouts at one switched off.
+                    AnchorMascot.react(state.getAsBoolean() ? AnchorMascot.Mood.HAPPY : AnchorMascot.Mood.MEH);
                 }, false, null, option, details));
     }
 
@@ -960,6 +967,7 @@ public final class AnchorsScreen extends Screen {
         leaveTab();
         this.tab = index;
         lastTab = index;
+        AnchorMascot.react(AnchorMascot.Mood.WAVE);
         this.tabChangedAt = System.nanoTime();
         this.scroll = 0.0F;
         this.scrollTarget = 0.0F;
@@ -1215,6 +1223,8 @@ public final class AnchorsScreen extends Screen {
                 rebuildWidgets();
             }
         }
+        // Zymekoh walks on the screen's floor, under every window that opens over it.
+        AnchorMascot.extract(this, graphics, mouseX, mouseY);
         if (this.serverCheck != null) {
             this.serverCheck.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
             if (this.serverCheck.done()) {
@@ -1959,6 +1969,9 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseClicked(MouseButtonEvent event, boolean doubleClick) {
+        if (!modalOpen() && AnchorMascot.mouseClicked(this, event)) {
+            return true;
+        }
         double mouseX = event.x();
         double mouseY = event.y();
         int button = event.button();
@@ -2067,6 +2080,9 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
+        if (!modalOpen() && AnchorMascot.mouseDragged(event)) {
+            return true;
+        }
         if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null || this.enemyIntro != null
                 || this.enemySwitch != null || this.herziumWindow != null) {
@@ -2100,6 +2116,9 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
+        if (!modalOpen() && AnchorMascot.mouseReleased(event)) {
+            return true;
+        }
         if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
                 || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null) {
@@ -2139,6 +2158,7 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
+        AnchorMascot.scrolled();
         if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.popover != null || this.guardWarning != null || this.enemyIntro != null
                 || this.enemySwitch != null || this.herziumWindow != null) {

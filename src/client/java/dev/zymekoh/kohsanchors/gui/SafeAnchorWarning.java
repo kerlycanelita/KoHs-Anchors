@@ -220,11 +220,8 @@ final class SafeAnchorWarning {
             AnchorsUi.glowEllipse(graphics, anchorX + tile / 2, ground - tile / 2, tile, tile, 0xA855F7, 0.55F);
             graphics.blit(RenderPipelines.GUI_TEXTURED, ANCHOR, anchorX, ground - tile, 0.0F, 0.0F, tile, tile, 16, 16, 16, 16);
         }
-        // The player: a dark figure two blocks tall.
-        int body = 0xFF2A1840;
-        graphics.fill(playerX + tile / 4, ground - tile * 2, playerX + tile * 3 / 4, ground - tile * 3 / 2, 0xFFE0B48A);
-        graphics.fill(playerX + tile / 5, ground - tile * 3 / 2, playerX + tile * 4 / 5, ground, body);
-        graphics.fill(playerX + tile / 5, ground - tile * 3 / 2, playerX + tile * 4 / 5, ground - tile * 3 / 2 + 1, this.color);
+        // The player is Zymekoh herself, facing her anchor.
+        AnchorMascot.drawFigure(graphics, playerX + tile * 0.5F, ground, Math.max(1, tile / 9), false);
         // The square: blinking until the block covers it.
         float drop = Mth.clamp((t - 0.9F) / 0.35F, 0.0F, 1.0F);
         if (t < 2.35F) {

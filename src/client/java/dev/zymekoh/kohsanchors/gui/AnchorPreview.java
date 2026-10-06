@@ -62,6 +62,8 @@ final class AnchorPreview {
     /** When the last blast broke the amethyst wall behind the anchor, or -1 while it is whole. */
     private long craterAt = -1L;
     private long respawnedAt = -1L;
+    /** The anchor is away because Zymekoh is eating it; when it comes back it grows in again. */
+    private boolean eatenAway;
     /** Starts at the opening, so the anchor holds its three-quarter pose before it plays. */
     private long lastTouch = System.nanoTime();
     private long nextAutoStep;
@@ -105,6 +107,11 @@ final class AnchorPreview {
                 : AnchorsTheme.PORTAL;
 
         drawWall(graphics, area, centerX, centerY, size, now, intro);
+        if (!this.eatenAway) {
+            // Where Zymekoh pulls the anchor from, even while it blows or grows back in.
+            float shown = size / 1.9F * this.zoom;
+            AnchorMascot.previewAnchor(0, centerX - shown * 0.5F, centerY - shown * 0.5F, shown);
+        }
 
         // Light behind the block that grows with every charge, and the shadow it stands on.
         float breathe = motion ? 0.85F + 0.15F * (float) Math.sin(seconds * 3.2D) : 1.0F;
@@ -116,7 +123,15 @@ final class AnchorPreview {
         if (blast < 0.0F) {
             float grow = AnchorsTheme.easeOutBack(appear) * (0.6F + 0.4F * intro);
             float scale = size / 1.9F * this.zoom * grow;
-            if (scale > 0.5F) {
+            // Zymekoh eats the preview's anchor: it is away while she does, and comes back after.
+            boolean eaten = AnchorMascot.anchorEaten();
+            if (eaten) {
+                this.eatenAway = true;
+            } else if (this.eatenAway) {
+                this.eatenAway = false;
+                this.respawnedAt = now;
+            }
+            if (scale > 0.5F && !eaten) {
                 this.rotation.identity().rotateZ((float) Math.PI)
                         .rotateX((float) Math.toRadians(this.pitch))
                         .rotateY((float) Math.toRadians(this.yaw));
@@ -126,7 +141,7 @@ final class AnchorPreview {
                 graphics.entity(this.model.withCharge(this.charge), scale, this.translation, this.rotation,
                         new Quaternionf(), area.x(), area.y(), area.right(), area.bottom());
             }
-            if (motion && this.charge > 0) {
+            if (motion && this.charge > 0 && !eaten) {
                 portalMotes(graphics, centerX, centerY - Math.round(size * 0.18F * this.zoom), size, seconds,
                         this.charge, intro, light);
             }
@@ -369,6 +384,7 @@ final class AnchorPreview {
         } else {
             this.blastStartedAt = now;
             this.craterAt = now;
+            AnchorMascot.previewBlast();
             if (withSound) {
                 AnchorSounds.previewExplosion();
             }
