@@ -469,5 +469,19 @@
   "kohs_anchors.mascot.tip.all_eaten": "The preview's anchor is still coming back.",
   "kohs_anchors.mascot.tip.fat": "Too many anchors! She is heavy for the next 10 minutes.",
   "kohs_anchors.dev.mascot": "AnchorMascot (ZMascot of KoHs Inventory Tweaks)",
-  "kohs_anchors.dev.mascot.description": "Drawn after the screen and before its windows; floor from the footer widgets (findFloor). Food: AnchorPreview reports its anchor (previewAnchor) and leaves it out while anchorEaten() (4 s). Play: DROP 0.35 s, CHARGE 0.55 s, WAIT 0.55 s, BOOM 0.6 s, every 25-45 s when playful and idle. Reacts: toggle (HAPPY/MEH), tab (WAVE), preview blast (SURPRISED). drawFigure is the player of SafeAnchorWarning."
+  "kohs_anchors.dev.mascot.description": "Drawn after the screen and before its windows; floor from the footer widgets (findFloor). Food: AnchorPreview reports its anchor (previewAnchor) and leaves it out while anchorEaten() (4 s). Play: DROP 0.35 s, CHARGE 0.55 s, WAIT 0.55 s, BOOM 0.6 s, every 25-45 s when playful and idle. Reacts: toggle (HAPPY/MEH), tab (WAVE), preview blast (SURPRISED). drawFigure is the player of SafeAnchorWarning.",
+  "kohs_anchors.option.mascot_size": "Size",
+  "kohs_anchors.option.mascot_size.description": "How big Zymekoh is on this screen.",
+  "kohs_anchors.option.mascot_personality": "Personality",
+  "kohs_anchors.option.mascot_personality.description": "Playful: now and then she drops an anchor of her own, charges it and blows it up. Calm: only when you ask her.",
+  "kohs_anchors.option.mascot_sounds": "Her sounds",
+  "kohs_anchors.option.mascot_sounds.description": "Her meows, purrs and bites, and the charge and blast of her anchors.",
+  "kohs_anchors.mascot.personality.playful": "Playful",
+  "kohs_anchors.mascot.personality.calm": "Calm",
+  "kohs_anchors.dev.mascot_size": "AnchorMascot.Prefs.size",
+  "kohs_anchors.dev.mascot_size.description": "1 to 3: the pixel unit she is drawn with · config/kohs_anchors_mascot.json",
+  "kohs_anchors.dev.mascot_personality": "AnchorMascot.Prefs.playful",
+  "kohs_anchors.dev.mascot_personality.description": "true: idle play every 25-45 s (Play DROP, CHARGE, WAIT, BOOM)",
+  "kohs_anchors.dev.mascot_sounds": "AnchorMascot.Prefs.sounds",
+  "kohs_anchors.dev.mascot_sounds.description": "AnchorMascot.sound: SimpleSoundInstance.forUI, cat ids via createVariableRangeEvent"
 }

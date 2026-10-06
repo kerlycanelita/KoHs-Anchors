@@ -371,5 +371,13 @@
   "kohs_anchors.mascot.hide": "Ocultar la mascota",
   "kohs_anchors.mascot.tip.only_anchors": "Solo come el anchor de la vista previa.",
   "kohs_anchors.mascot.tip.all_eaten": "El anchor de la vista previa todavía está volviendo.",
-  "kohs_anchors.mascot.tip.fat": "¡Demasiados anchors! Pesará durante los próximos 10 minutos."
+  "kohs_anchors.mascot.tip.fat": "¡Demasiados anchors! Pesará durante los próximos 10 minutos.",
+  "kohs_anchors.option.mascot_size": "Tamaño",
+  "kohs_anchors.option.mascot_size.description": "Lo grande que es Zymekoh en esta pantalla.",
+  "kohs_anchors.option.mascot_personality": "Personalidad",
+  "kohs_anchors.option.mascot_personality.description": "Juguetona: de vez en cuando pone un anchor suyo, lo carga y lo explota. Tranquila: solo cuando se lo pides.",
+  "kohs_anchors.option.mascot_sounds": "Sus sonidos",
+  "kohs_anchors.option.mascot_sounds.description": "Sus maullidos, ronroneos y mordiscos, y la carga y la explosión de sus anchors.",
+  "kohs_anchors.mascot.personality.playful": "Juguetona",
+  "kohs_anchors.mascot.personality.calm": "Tranquila"
 }

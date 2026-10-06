@@ -301,7 +301,7 @@ public final class AnchorMascot {
         }
     }
 
-    private static void save() {
+    static void save() {
         try {
             Files.createDirectories(FILE.getParent());
             try (Writer writer = Files.newBufferedWriter(FILE, StandardCharsets.UTF_8)) {

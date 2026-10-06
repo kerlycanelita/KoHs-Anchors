@@ -19,8 +19,13 @@ import dev.zymekoh.kohsanchors.skin.ColorMath;
 import dev.zymekoh.kohsanchors.skin.SkinPaint;
 import dev.zymekoh.kohsanchors.sound.AnchorSounds;
 import java.net.URI;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Deque;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -85,6 +90,8 @@ public final class AnchorsScreen extends Screen {
     private static final int SECTION_HEIGHT = 14;
     private static final int SECTION_GAP = 6;
     private static final int ROW_GAP = 4;
+    /** How far in a row hanging from another's tree sits: room for the branch line. */
+    private static final int BRANCH_INDENT = 12;
     private static final int STAT_LINE = 11;
     private static final int STATS_HEIGHT = 13 + STAT_LINE * 5;
     private static final double CYCLE_SECONDS = 4.8D;
@@ -128,6 +135,25 @@ public final class AnchorsScreen extends Screen {
     private final List<AnchorRow> rows = new ArrayList<>();
     private final List<Integer> rowOffsets = new ArrayList<>();
     private final List<Section> sections = new ArrayList<>();
+    /** Where each section's title stands, laid out with the rows every frame. */
+    private int[] sectionOffsets = new int[0];
+    /**
+     * The option tree: the row each row hangs from (-1: none), whether its branch is open all the way
+     * up, how far it has come out (0 to 1), and its key, which carries that over a rebuild.
+     */
+    private final List<Integer> rowParents = new ArrayList<>();
+    private final List<BooleanSupplier> rowOpen = new ArrayList<>();
+    private final List<String> rowKeys = new ArrayList<>();
+    private float[] rowReveal = new float[0];
+    private final Map<String, Float> revealCarry = new HashMap<>();
+    /** Per frame: where the line of each branch has reached, by the row it hangs from. */
+    private int[] branchJoints = new int[0];
+    /** The branches being built, innermost first. */
+    private final Deque<Branch> branches = new ArrayDeque<>();
+    private String buildingSection = "";
+    /** The section of the session numbers (-1: none), and what the list ends in after its rows. */
+    private int statsSection = -1;
+    private int tailHeight;
     private final AnchorPreview anchorPreview = new AnchorPreview();
     /** The header's mark: a small Nether portal turning on itself. */
     private final HeaderPortal headerPortal = new HeaderPortal();
@@ -261,9 +287,20 @@ public final class AnchorsScreen extends Screen {
                         Math.max(0, preview.height() - STATS_HEIGHT - 20))
                 : AnchorsLayout.Rect.EMPTY;
 
+        // Rows built again carry how far they had come out, so a branch unfolding goes on unfolding.
+        for (int index = 0; index < this.rowKeys.size(); index++) {
+            this.revealCarry.put(this.rowKeys.get(index), this.rowReveal[index]);
+        }
         this.rows.clear();
         this.rowOffsets.clear();
+        this.rowParents.clear();
+        this.rowOpen.clear();
+        this.rowKeys.clear();
         this.sections.clear();
+        this.branches.clear();
+        this.buildingSection = "";
+        this.statsSection = -1;
+        this.tailHeight = 0;
         this.enemyPicker = null;
         if (workshopTab()) {
             // The player's anchor and the enemy's share the workshop; each keeps its own skin and paint.
@@ -300,9 +337,8 @@ public final class AnchorsScreen extends Screen {
         }
         this.shownBridgeState = BridgeClient.state();
 
-        this.maxScroll = Math.max(0, this.contentHeight - this.layout.options.height());
-        this.scrollTarget = Mth.clamp(this.scrollTarget, 0.0F, this.maxScroll);
-        this.scroll = Mth.clamp(this.scroll, 0.0F, this.maxScroll);
+        this.sectionOffsets = new int[this.sections.size()];
+        relayout(0.0F);
         applyScroll();
 
         addRenderableWidget(new AnchorsButton(this.layout.resetButton, Component.translatable("kohs_anchors.button.reset"),
@@ -330,7 +366,9 @@ public final class AnchorsScreen extends Screen {
         if (!this.layout.showsPreview() && this.tab != ENEMY_GLOW) {
             // Without the anchor column the session numbers move to the end of the list.
             offset = section(offset, "kohs_anchors.stats.title");
+            this.statsSection = this.sections.size() - 1;
             this.statsOffset = offset - SECTION_HEIGHT;
+            this.tailHeight = STAT_LINE * 5;
             offset += STAT_LINE * 5;
         }
         if (this.tab == ENEMY_GLOW && settings().enemyGlow.enabled) {
@@ -342,6 +380,7 @@ public final class AnchorsScreen extends Screen {
             });
             this.enemyPickerOffset = offset + 4;
             offset += pickerHeight + 8;
+            this.tailHeight = pickerHeight + 8;
             this.enemyPickerHeight = pickerHeight;
         }
         this.contentHeight = offset + 2;
@@ -367,7 +406,7 @@ public final class AnchorsScreen extends Screen {
                 AnchorDebounce::settingsChanged, "AnchorDebounce.refuses (charges and glowstone blocks)",
                 "never a detonation · slot change ends the window", "config glowstoneDebounceMillis");
         // Switching the guard off is immediate; switching it on shows what it takes away first.
-        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("glowstone_guard"),
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), rowWidth(), label("glowstone_guard"),
                 description("glowstone_guard"), this.font, () -> settings.glowstoneGuard, () -> {
                     if (settings.glowstoneGuard) {
                         settings.glowstoneGuard = false;
@@ -388,7 +427,8 @@ public final class AnchorsScreen extends Screen {
         offset = toggle(offset, "anchor_fade", () -> settings.anchorFade, value -> settings.anchorFade = value,
                 "AnchorFade.start ← DetonationPredictor.detonate", "AnchorFade.submit ← LevelRendererGlowMixin",
                 "drawing only: no block, no collision · fading now " + AnchorFade.active());
-        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(), label("fade_style"),
+        openBranch(() -> settings.anchorFade);
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("fade_style"),
                 description("fade_style"), this.font, () -> Component.translatable("kohs_anchors.fade."
                         + AnchorFade.Style.of(settings.fadeStyle).name().toLowerCase(Locale.ROOT)).getString(), () -> {
                     settings.fadeStyle = (AnchorFade.Style.of(settings.fadeStyle).ordinal() + 1) % AnchorFade.Style.values().length;
@@ -399,10 +439,11 @@ public final class AnchorsScreen extends Screen {
                 }, "fade_style", "AnchorFade.Style." + AnchorFade.Style.of(settings.fadeStyle),
                 "SkinCubeTexture.translucent · lightning for the cut, embers and the last line",
                 "inside styles end when an anchor is drawn there again"));
+        closeBranch();
         offset = toggle(offset, "anchor_debris", () -> settings.anchorDebris, value -> settings.anchorDebris = value,
                 "ClientPacketListenerMixin @ handleExplosion trackExplosionEffects",
                 "DetonationPredictor.shouldDrawDebris");
-        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(), label("anchor_smoke"),
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("anchor_smoke"),
                 description("anchor_smoke"), this.font, () -> Component.translatable(switch (settings.anchorSmoke) {
                     case 1 -> "kohs_anchors.smoke.light";
                     case 2 -> "kohs_anchors.smoke.none";
@@ -414,7 +455,7 @@ public final class AnchorsScreen extends Screen {
                 "and DetonationPredictor.detonate · config anchorSmoke"));
         offset = section(offset, "kohs_anchors.section.safe_anchor");
         // Switching it off is immediate; switching it on says first what it is and is not.
-        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("safe_anchor_view"),
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), rowWidth(), label("safe_anchor_view"),
                 description("safe_anchor_view"), this.font, () -> settings.safeAnchorView, () -> {
                     if (settings.safeAnchorView) {
                         settings.safeAnchorView = false;
@@ -429,11 +470,13 @@ public final class AnchorsScreen extends Screen {
                     });
                 }, false, null, "safe_anchor_view", "SafeAnchorView: Vanilla's explosion rays, armour, difficulty",
                 SafeAnchorView.describe(), "SafeAnchorWarning before it switches on"));
-        offset = addRow(offset, new AnchorRows.Color(x(), y(offset), this.layout.rowWidth(), label("safe_anchor_color"),
+        openBranch(() -> settings.safeAnchorView);
+        offset = addRow(offset, new AnchorRows.Color(x(), y(offset), rowWidth(), label("safe_anchor_color"),
                 description("safe_anchor_color"), this.font, () -> settings.safeAnchorColor, () -> openColorPopover(
                         "safe_anchor_color", () -> settings.safeAnchorColor, color -> settings.safeAnchorColor = color),
                 () -> settings.safeAnchorView, "safe_anchor_color", "Settings.safeAnchorColor = "
                         + ColorMath.hex(settings.safeAnchorColor)));
+        closeBranch();
         offset = section(offset, "kohs_anchors.section.core");
         offset = note(offset, "core", () -> Component.translatable("kohs_anchors.core.badge").getString(),
                 AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, AnchorChain, mergesRepeat",
@@ -448,6 +491,30 @@ public final class AnchorsScreen extends Screen {
                 "AnchorMascot: Zymekoh, from KoHs Inventory Tweaks · config/kohs_anchors_mascot.json",
                 "eats only the preview's anchor (AnchorPreview → previewAnchor / anchorEaten)",
                 "plays: drops an anchor, charges it, blows it up · drawFigure in SafeAnchorWarning");
+        openBranch(() -> AnchorMascot.prefs().enabled);
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("mascot_size"),
+                description("mascot_size"), this.font,
+                () -> Component.translatable("kohs_anchors.mascot.size." + AnchorMascot.prefs().size).getString(), () -> {
+                    AnchorMascot.Prefs prefs = AnchorMascot.prefs();
+                    prefs.size = prefs.size % 3 + 1;
+                    AnchorMascot.save();
+                    AnchorMascot.react(AnchorMascot.Mood.HAPPY);
+                }, "mascot_size", "Prefs.size = " + AnchorMascot.prefs().size + " · the figure's pixel unit"));
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("mascot_personality"),
+                description("mascot_personality"), this.font, () -> Component.translatable(AnchorMascot.prefs().playful
+                        ? "kohs_anchors.mascot.personality.playful" : "kohs_anchors.mascot.personality.calm").getString(),
+                () -> {
+                    AnchorMascot.Prefs prefs = AnchorMascot.prefs();
+                    prefs.playful = !prefs.playful;
+                    AnchorMascot.save();
+                    AnchorMascot.react(prefs.playful ? AnchorMascot.Mood.HAPPY : AnchorMascot.Mood.MEH);
+                }, "mascot_personality", "Prefs.playful = " + AnchorMascot.prefs().playful,
+                "idle play every 25-45 s: DROP, CHARGE, WAIT, BOOM"));
+        offset = toggle(offset, "mascot_sounds", () -> AnchorMascot.prefs().sounds, value -> {
+            AnchorMascot.prefs().sounds = value;
+            AnchorMascot.save();
+        }, "Prefs.sounds: entity.cat.*, eat, burp, her anchors' charge and blast");
+        closeBranch();
         return offset;
     }
 
@@ -457,7 +524,8 @@ public final class AnchorsScreen extends Screen {
         offset = toggle(offset, "glow_enabled", () -> glow.enabled, value -> glow.enabled = value,
                 "AnchorGlowRenderer.submit ← LevelRendererGlowMixin @ submitBlockEntities TAIL",
                 "AnchorTracker: event-driven + palette scan", "GlowMaterial: additive, depth-tested, no depth write");
-        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(), label("glow_quality"),
+        openBranch(() -> glow.enabled);
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("glow_quality"),
                 description("glow_quality"), this.font, () -> Component.translatable(switch (glow.quality) {
                     case AnchorsConfig.Glow.QUALITY_PERFORMANCE -> "kohs_anchors.glow_quality.performance";
                     case AnchorsConfig.Glow.QUALITY_HIGH -> "kohs_anchors.glow_quality.quality";
@@ -467,7 +535,7 @@ public final class AnchorsScreen extends Screen {
                     rebuildWidgets();
                 }, "glow_quality", "AnchorGlowRenderer: view cone, back faces, LOD by distance, vertex budget",
                 "frame: " + AnchorGlowRenderer.frameStats()));
-        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(), label("glow_source"),
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("glow_source"),
                 description("glow_source"), this.font, () -> Component.translatable(glow.source == AnchorsConfig.Glow.SOURCE_CUSTOM
                         ? "kohs_anchors.glow.source.custom" : "kohs_anchors.glow.source.texture").getString(),
                 () -> {
@@ -476,10 +544,12 @@ public final class AnchorsScreen extends Screen {
                     AnchorsConfig.changed();
                     rebuildWidgets();
                 }, "glow_source", "SkinComposer.averageGlowColor(skin, charge) or Glow.color"));
-        offset = addRow(offset, new AnchorRows.Color(x(), y(offset), this.layout.rowWidth(), label("glow_color"),
+        openBranch(() -> glow.source == AnchorsConfig.Glow.SOURCE_CUSTOM);
+        offset = addRow(offset, new AnchorRows.Color(x(), y(offset), rowWidth(), label("glow_color"),
                 description("glow_color"), this.font, () -> glow.color, () -> openColorPopover("glow_color",
                         () -> glow.color, color -> glow.color = color), () -> glow.source == AnchorsConfig.Glow.SOURCE_CUSTOM,
                 "glow_color", "Glow.color = " + ColorMath.hex(glow.color)));
+        closeBranch();
         int[] percent = AnchorSliderRow.linear(0, 300, 10);
         offset = slider(offset, "glow_power", () -> glow.power, value -> glow.power = value, percent,
                 value -> value + "%", AnchorsConfig::changed, "intensity = power × charge × pulse × distance fade");
@@ -495,8 +565,9 @@ public final class AnchorsScreen extends Screen {
                 "0.86 + 0.14 sin(2.3 t + phase per anchor)");
         offset = toggle(offset, "glow_charge_scaling", () -> glow.chargeScaling, value -> glow.chargeScaling = value,
                 "0.4 + 0.6 × charge / 4");
+        closeBranch();
         offset = section(offset, "kohs_anchors.section.crystal");
-        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("crystal_colors"),
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("crystal_colors"),
                 description("crystal_colors"), this.font, () -> Component.translatable(settings().crystalColors
                         ? "kohs_anchors.crystal.synced" : "kohs_anchors.button.open").getString(), this::openCrystalColors,
                 settings().crystalColors, false, "crystal_colors", "CrystalPalette.read() ← config/crystal_tweaks.json",
@@ -511,7 +582,7 @@ public final class AnchorsScreen extends Screen {
     private int buildEnemyGlow(int offset) {
         AnchorsConfig.EnemyGlow enemy = settings().enemyGlow;
         // The switch comes first: off, the page goes back to it alone.
-        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("enemy_enabled"),
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), rowWidth(), label("enemy_enabled"),
                 description("enemy_enabled"), this.font, () -> enemy.enabled, () -> setEnemyAnchors(!enemy.enabled), false, null,
                 "enemy_enabled", "EnemyGlow.enabled · off: the page is only this switch (EnemyReveal)",
                 "tracked " + AnchorTracker.count() + " · enemies " + AnchorTracker.enemyCount()));
@@ -550,7 +621,9 @@ public final class AnchorsScreen extends Screen {
             String... details) {
         offset = section(offset, "kohs_anchors.section.sound." + kind);
         offset = toggle(offset, "sound_" + kind + "_custom", () -> sound.custom, value -> sound.custom = value, details);
-        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("sound_" + kind + "_pick"),
+        // The chosen sound, its volume and its pitch only count while the custom sound is on.
+        openBranch(() -> sound.custom);
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("sound_" + kind + "_pick"),
                 description("sound_" + kind + "_pick"), this.font,
                 () -> AnchorsUi.ellipsis(this.font, AnchorSounds.label(sound.sound), 150),
                 () -> this.soundPicker = new SoundPicker(Component.translatable("kohs_anchors.option.sound_" + kind + "_pick")
@@ -564,7 +637,8 @@ public final class AnchorsScreen extends Screen {
                 null, "volume × " + sound.volume + "%");
         offset = slider(offset, "sound_pitch", () -> sound.pitch, value -> sound.pitch = value, pitch, value -> value + "%",
                 null, "pitch × " + sound.pitch + "%");
-        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("sound_preview"),
+        closeBranch();
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("sound_preview"),
                 description("sound_preview"), this.font, () -> Component.translatable("kohs_anchors.button.play").getString(),
                 preview, true, false, "sound_preview", "SimpleSoundInstance.forUI"));
         return offset;
@@ -579,7 +653,7 @@ public final class AnchorsScreen extends Screen {
         offset = section(offset, "kohs_anchors.section.herzium_order");
         String version = HerziumBridge.version();
         boolean changeable = HerziumBridge.orderAvailable();
-        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(),
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(),
                 Component.translatable("kohs_anchors.option.herzium", version),
                 description(HerziumBridge.agrees() ? "herzium" : "herzium_old"), this.font,
                 () -> orderLabel(HerziumBridge.hotbarOrder()), () -> {
@@ -590,7 +664,7 @@ public final class AnchorsScreen extends Screen {
                 changeable ? "changed through Herzium, which saves it" : "read from " + HerziumBridge.configFile().getFileName()
                         + " only"));
         if (!HerziumBridge.RECOMMENDED.equals(HerziumBridge.hotbarOrder()) && changeable) {
-            offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("herzium_recommend"),
+            offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("herzium_recommend"),
                     description("herzium_recommend"), this.font,
                     () -> Component.translatable("kohs_anchors.herzium.use").getString(), () -> {
                         HerziumBridge.selectHotbarOrder(HerziumBridge.RECOMMENDED);
@@ -609,7 +683,7 @@ public final class AnchorsScreen extends Screen {
                 "AnchorInput.replay → HotbarOrderController.hotbarClickConsumed(slot, remaining)",
                 "AnchorInput.endTick → ImmediateHotbarInput.visualSelectedSlot / clearPreview",
                 "never noteCallSiteSelection · " + HerziumBridge.talkStats());
-        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("herzium_guide"),
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("herzium_guide"),
                 description("herzium_guide"), this.font, () -> Component.translatable("kohs_anchors.button.open").getString(),
                 () -> this.herziumWindow = new HerziumWindow(HerziumWindow.Kind.GUIDE, settings.interfaceMotion, this),
                 false, false, "herzium_guide", "HerziumWindow(GUIDE)", "Settings.herziumIntro = " + settings.herziumIntro));
@@ -623,7 +697,7 @@ public final class AnchorsScreen extends Screen {
                 .toUpperCase(Locale.ROOT), AnchorsTheme.INTENSE_BRIGHT, "the anchor chain options live on Anchors Server",
                 "ServerLock: only where a bridge allows them");
         offset = section(offset, "kohs_anchors.section.dev");
-        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("dev_mode"),
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), rowWidth(), label("dev_mode"),
                 description("dev_mode"), this.font, () -> settings.devMode, () -> {
                     if (settings.devMode) {
                         settings.devMode = false;
@@ -640,7 +714,7 @@ public final class AnchorsScreen extends Screen {
         if (settings.devMode) {
             offset = section(offset, "kohs_anchors.section.mixins");
             for (String[] mixin : MIXINS) {
-                offset = addRow(offset, new AnchorRows.Note(x(), y(offset), this.layout.rowWidth(), Component.literal(mixin[0]),
+                offset = addRow(offset, new AnchorRows.Note(x(), y(offset), rowWidth(), Component.literal(mixin[0]),
                         Component.literal(mixin[1] + "\n" + mixin[2]), this.font, () -> mixin[3], AnchorsTheme.DEV_BLUE_BRIGHT,
                         mixin[0], mixin[1], mixin[2]));
             }
@@ -686,7 +760,7 @@ public final class AnchorsScreen extends Screen {
                 "policy " + Integer.toBinaryString(BridgeClient.policy()) + " · " + BridgeClient.platform() + " "
                         + BridgeClient.bridgeVersion());
         if (state != BridgeClient.State.LOCAL && state != BridgeClient.State.OFFLINE) {
-            offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("bridge_check"),
+            offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("bridge_check"),
                     description("bridge_check"), this.font, () -> Component.translatable("kohs_anchors.button.check").getString(),
                     () -> {
                         BridgeClient.recheck();
@@ -706,7 +780,7 @@ public final class AnchorsScreen extends Screen {
                 value -> settings.bridgeLatency = value, OptionFx.Kind.LATENCY, "BridgeClient PING / PONG once a second",
                 "Latency.millis() → AnchorVeil and the early clicks' waits");
         offset = section(offset, "kohs_anchors.section.bridge_plugin");
-        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), this.layout.rowWidth(), label("bridge_plugin"),
+        offset = addRow(offset, new AnchorRows.Button(x(), y(offset), rowWidth(), label("bridge_plugin"),
                 description("bridge_plugin"), this.font, () -> Component.translatable("kohs_anchors.button.open").getString(),
                 () -> openLink(ServerCheckWindow.PLUGIN_URL), false, false, "bridge_plugin", ServerCheckWindow.PLUGIN_URL));
         return offset;
@@ -721,7 +795,7 @@ public final class AnchorsScreen extends Screen {
         boolean available = BridgeClient.available();
         Component tag = Component.translatable(!available ? "kohs_anchors.tag.locked"
                 : BridgeClient.allows(policyBit) ? "kohs_anchors.tag.bridge" : "kohs_anchors.tag.off_here");
-        return addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
+        return addRow(offset, new AnchorSwitchRow(x(), y(offset), rowWidth(), label(option), description(option),
                 this.font, state, () -> {
                     if (!BridgeClient.available()) {
                         startServerCheck(true);
@@ -842,7 +916,12 @@ public final class AnchorsScreen extends Screen {
     }
 
     private int x() {
-        return this.layout.options.x();
+        return this.layout.options.x() + this.branches.size() * BRANCH_INDENT;
+    }
+
+    /** A row's width: the list's, less the indent of the branch it hangs from. */
+    private int rowWidth() {
+        return this.layout.rowWidth() - this.branches.size() * BRANCH_INDENT;
     }
 
     private int y(int offset) {
@@ -883,12 +962,13 @@ public final class AnchorsScreen extends Screen {
 
     private int section(int offset, String key) {
         int start = offset == 0 ? 0 : offset + SECTION_GAP;
-        this.sections.add(new Section(Component.translatable(key).getString().toUpperCase(Locale.ROOT), start, key));
+        this.sections.add(new Section(Component.translatable(key).getString().toUpperCase(Locale.ROOT), this.rows.size(), key));
+        this.buildingSection = key;
         return start + SECTION_HEIGHT;
     }
 
     private int toggle(int offset, String option, BooleanSupplier state, Consumer<Boolean> set, String... details) {
-        return addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
+        return addRow(offset, new AnchorSwitchRow(x(), y(offset), rowWidth(), label(option), description(option),
                 this.font, state, () -> {
                     set.accept(!state.getAsBoolean());
                     AnchorsConfig.changed();
@@ -899,7 +979,7 @@ public final class AnchorsScreen extends Screen {
 
     private int slider(int offset, String option, IntSupplier value, IntConsumer set, int[] stops,
             java.util.function.IntFunction<String> format, Runnable onRelease, String... details) {
-        return addRow(offset, new AnchorSliderRow(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
+        return addRow(offset, new AnchorSliderRow(x(), y(offset), rowWidth(), label(option), description(option),
                 this.font, value, v -> {
                     set.accept(v);
                     AnchorsConfig.changed();
@@ -912,15 +992,80 @@ public final class AnchorsScreen extends Screen {
     }
 
     private int note(int offset, String option, java.util.function.Supplier<String> badge, int badgeColor, String... details) {
-        return addRow(offset, new AnchorRows.Note(x(), y(offset), this.layout.rowWidth(), label(option), description(option),
+        return addRow(offset, new AnchorRows.Note(x(), y(offset), rowWidth(), label(option), description(option),
                 this.font, badge, badgeColor, option, details));
     }
 
     private int addRow(int offset, AnchorRow row) {
         addWidget(row);
+        int index = this.rows.size();
         this.rows.add(row);
         this.rowOffsets.add(offset);
+        Branch branch = this.branches.peek();
+        BooleanSupplier open = branch == null ? () -> true : branch.open();
+        String key = this.buildingSection + "/" + row.inspectKey;
+        this.rowParents.add(branch == null ? -1 : branch.parent());
+        this.rowOpen.add(open);
+        this.rowKeys.add(key);
+        if (this.rowReveal.length <= index) {
+            this.rowReveal = Arrays.copyOf(this.rowReveal, index + 16);
+        }
+        Float carried = this.revealCarry.get(key);
+        this.rowReveal[index] = carried != null ? carried : open.getAsBoolean() ? 1.0F : 0.0F;
         return offset + row.getHeight() + ROW_GAP;
+    }
+
+    /**
+     * Hangs the rows added until {@link #closeBranch} from the row added last: they come out from
+     * under it while {@code open} holds (its switch on, its choice made) and fold back when not.
+     */
+    private void openBranch(BooleanSupplier open) {
+        Branch outer = this.branches.peek();
+        BooleanSupplier all = outer == null ? open : () -> outer.open().getAsBoolean() && open.getAsBoolean();
+        this.branches.push(new Branch(this.rows.size() - 1, all));
+    }
+
+    private void closeBranch() {
+        this.branches.pop();
+    }
+
+    /**
+     * Lays the list out from the top, every frame: the section titles, and each row as far as it
+     * has come out. A closed branch folds up under the row it hangs from and the rows below close in.
+     */
+    private void relayout(float response) {
+        int count = this.rows.size();
+        int offset = 0;
+        int section = 0;
+        for (int index = 0; index <= count; index++) {
+            while (section < this.sections.size() && this.sections.get(section).firstRow() == index) {
+                int start = offset == 0 ? 0 : offset + SECTION_GAP;
+                this.sectionOffsets[section++] = start;
+                offset = start + SECTION_HEIGHT;
+            }
+            if (index == count) {
+                break;
+            }
+            AnchorRow row = this.rows.get(index);
+            float target = this.rowOpen.get(index).getAsBoolean() ? 1.0F : 0.0F;
+            float reveal = this.rowReveal[index] + (target - this.rowReveal[index]) * response;
+            if (Math.abs(target - reveal) < 0.005F) {
+                reveal = target;
+            }
+            this.rowReveal[index] = reveal;
+            this.rowOffsets.set(index, offset);
+            // A folded row is neither drawn nor reached by the pointer or the keyboard.
+            row.visible = reveal > 0.0F;
+            offset += Math.round((row.getHeight() + ROW_GAP) * reveal);
+        }
+        if (this.statsSection >= 0) {
+            this.statsOffset = this.sectionOffsets[this.statsSection];
+        }
+        this.enemyPickerOffset = offset + 4;
+        this.contentHeight = offset + this.tailHeight + 2;
+        this.maxScroll = Math.max(0, this.contentHeight - this.layout.options.height());
+        this.scrollTarget = Mth.clamp(this.scrollTarget, 0.0F, this.maxScroll);
+        this.scroll = Mth.clamp(this.scroll, 0.0F, this.maxScroll);
     }
 
     private void applyScroll() {
@@ -928,8 +1073,20 @@ public final class AnchorsScreen extends Screen {
         int offset = Math.round(this.scroll);
         for (int index = 0; index < this.rows.size(); index++) {
             AnchorRow row = this.rows.get(index);
-            row.setY(viewport.y() + this.rowOffsets.get(index) - offset);
-            row.setClip(viewport);
+            int top = viewport.y() + this.rowOffsets.get(index) - offset;
+            float reveal = this.rowReveal[index];
+            if (reveal >= 1.0F) {
+                row.setY(top);
+                row.setClip(viewport);
+                continue;
+            }
+            // Coming out or folding back: the card slides from under the row above, and only what
+            // has come out shows and answers the pointer.
+            int slot = Math.round((row.getHeight() + ROW_GAP) * reveal);
+            row.setY(top + slot - row.getHeight() - ROW_GAP);
+            int clipTop = Math.max(viewport.y(), top);
+            int clipBottom = Math.min(viewport.bottom(), top + slot - ROW_GAP);
+            row.setClip(new AnchorsLayout.Rect(viewport.x(), clipTop, viewport.width(), Math.max(0, clipBottom - clipTop)));
         }
     }
 
@@ -1140,7 +1297,10 @@ public final class AnchorsScreen extends Screen {
         DevInspector.begin(dev());
 
         followFocus();
+        // Branches come out and fold back in about a third of a second; the list follows them.
+        relayout(motion ? 1.0F - (float) Math.exp(-frameMillis / 75.0F) : 1.0F);
         updateScroll(frameMillis, motion);
+        applyScroll();
         updateAnchorCycle(seconds, motion);
 
         boolean advanced = crimson();
@@ -1618,8 +1778,9 @@ public final class AnchorsScreen extends Screen {
         int offset = Math.round(this.scroll);
         int lineRight = viewport.x() + this.layout.rowWidth();
         graphics.enableScissor(viewport.x(), viewport.y(), viewport.right(), viewport.bottom());
-        for (Section section : this.sections) {
-            int y = viewport.y() + section.offset() + 2 - offset;
+        for (int index = 0; index < this.sections.size(); index++) {
+            Section section = this.sections.get(index);
+            int y = viewport.y() + this.sectionOffsets[index] + 2 - offset;
             if (y + SECTION_HEIGHT < viewport.y() || y > viewport.bottom()) {
                 continue;
             }
@@ -1636,16 +1797,37 @@ public final class AnchorsScreen extends Screen {
             DevInspector.node("Section", section.title(), viewport.x(), y, this.layout.rowWidth(), SECTION_HEIGHT - 2,
                     "Component " + section.key());
         }
-        for (int index = 0; index < this.rows.size(); index++) {
+        int count = this.rows.size();
+        if (this.branchJoints.length < count) {
+            this.branchJoints = new int[count + 16];
+        }
+        Arrays.fill(this.branchJoints, 0, count, Integer.MIN_VALUE);
+        int branchColor = advanced ? AnchorsTheme.CRIMSON_BRIGHT : intense() ? AnchorsTheme.INTENSE_BRIGHT
+                : AnchorsTheme.ACCENT_BRIGHT;
+        for (int index = 0; index < count; index++) {
             AnchorRow row = this.rows.get(index);
-            if (row.getY() >= viewport.bottom() || row.getY() + row.getHeight() <= viewport.y()) {
+            AnchorsLayout.Rect clip = row.clip();
+            if (!row.visible || clip.height() <= 0 || row.getY() >= viewport.bottom()
+                    || row.getY() + row.getHeight() <= viewport.y()) {
                 continue;
             }
             float appear = motion
                     ? AnchorsTheme.easeOutCubic(progress(since - index * ROW_STAGGER_NANOS, ROW_FADE_NANOS))
                     : 1.0F;
-            row.setAppear(appear);
+            float reveal = this.rowReveal[index];
+            int parent = this.rowParents.get(index);
+            if (parent >= 0) {
+                drawBranch(graphics, row, parent, reveal, appear, branchColor);
+            }
+            row.setAppear(appear * (0.25F + 0.75F * reveal));
+            boolean partial = reveal < 1.0F;
+            if (partial) {
+                graphics.enableScissor(clip.x(), clip.y(), clip.right(), clip.bottom());
+            }
             row.extractRenderState(graphics, mouseX, mouseY, partialTick);
+            if (partial) {
+                graphics.disableScissor();
+            }
             DevInspector.node(row.getClass().getSimpleName(), row.inspectKey, row.getX(), Math.max(row.getY(), viewport.y()),
                     row.getWidth(), Math.min(row.getY() + row.getHeight(), viewport.bottom()) - Math.max(row.getY(), viewport.y()),
                     row.inspectDetails);
@@ -1687,6 +1869,28 @@ public final class AnchorsScreen extends Screen {
                         0x800B0514);
             }
         }
+    }
+
+    /**
+     * A child's piece of its branch: down the side from the row it hangs from (or from the sibling
+     * above), then a tick and a node level with its name. While it comes out, the node rides the
+     * edge it comes out of, brighter.
+     */
+    private void drawBranch(GuiGraphicsExtractor graphics, AnchorRow row, int parent, float reveal, float appear,
+            int color) {
+        AnchorsLayout.Rect clip = row.clip();
+        AnchorRow from = this.rows.get(parent);
+        int lineX = row.getX() - BRANCH_INDENT / 2 - 1;
+        int node = Mth.clamp(row.getY() + AnchorRow.PAD_Y + 4, clip.y(), clip.bottom() - 1);
+        int top = this.branchJoints[parent] != Integer.MIN_VALUE ? this.branchJoints[parent] : from.getY() + from.getHeight();
+        int line = AnchorsTheme.withAlpha(color, Math.round((150.0F + 90.0F * (1.0F - reveal)) * appear));
+        if (node > top) {
+            graphics.fill(lineX, top, lineX + 1, node, line);
+        }
+        graphics.fill(lineX + 1, node, row.getX(), node + 1, line);
+        AnchorsUi.diamond(graphics, lineX, node, reveal < 1.0F ? 3 : 2, AnchorsTheme.fade(
+                AnchorsTheme.lerp(color, 0xFFFFFFFF, (1.0F - reveal) * 0.8F), appear));
+        this.branchJoints[parent] = node + 1;
     }
 
     private void drawPreview(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float intro, boolean motion,
@@ -2423,6 +2627,11 @@ public final class AnchorsScreen extends Screen {
         return Mth.clamp(elapsed / (float) duration, 0.0F, 1.0F);
     }
 
-    private record Section(String title, int offset, String key) {
+    /** A section title, before the row {@code firstRow} ({@code rows.size()}: after the last one). */
+    private record Section(String title, int firstRow, String key) {
+    }
+
+    /** A branch being built: the row it hangs from, and whether it is open all the way up. */
+    private record Branch(int parent, BooleanSupplier open) {
     }
 }
