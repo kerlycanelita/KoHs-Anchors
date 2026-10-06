@@ -96,11 +96,23 @@ public final class AnchorInput {
     private static final long HOLD_TIMEOUT_NANOS = 700_000_000L;
     private static final long HOLD_TIMEOUT_MAX_NANOS = 1_500_000_000L;
     private static final int[] HELD_SLOTS = new int[HOLD_CAPACITY];
+    /** The rotation each held click was pressed with, if known (PressAim): it goes out along it. */
+    private static final boolean[] HELD_AIMED = new boolean[HOLD_CAPACITY];
+    private static final float[] HELD_YAW = new float[HOLD_CAPACITY];
+    private static final float[] HELD_PITCH = new float[HOLD_CAPACITY];
+    /**
+     * The block the first click of this tick went to. The server has one look direction per tick:
+     * a click for another block in the same tick is one it could not have seen, and Grim drops it
+     * silently (measured in the lab, bench FLICK); that click goes out on the next tick instead.
+     */
+    private static BlockPos passTarget;
 
     private static boolean hotbarPointReached;
     private static int usesThisPass;
     /** The slot of the last use this pass, to tell a repeat with the same item from a new item. */
     private static int lastUseSlot = -1;
+    /** Whether the last use of this pass went where its own press was (PressAim). */
+    private static boolean lastUseAimed;
     private static int heldCount;
     private static long heldSince;
     /** The block drawn as an anchor that the held clicks wait for the world to have. */
@@ -142,6 +154,9 @@ public final class AnchorInput {
         Options options = minecraft.options;
         if (key.equals(keyOf(options.keyUse))) {
             JOURNAL.record(InputJournal.USE, now);
+            if (AnchorsConfig.settings().pressAim) {
+                PressAim.pressed(minecraft.player);
+            }
         }
         KeyMapping[] slots = options.keyHotbarSlots;
         for (int slot = 0; slot < slots.length; slot++) {
@@ -215,6 +230,7 @@ public final class AnchorInput {
             // A screen releases every key mapping and a world change starts input over: the order
             // of presses Vanilla no longer counts goes with them.
             JOURNAL.clear();
+            PressAim.clear();
         }
         AnchorVeil.tick(minecraft);
         DetonationPredictor.tick(minecraft);
@@ -313,11 +329,24 @@ public final class AnchorInput {
         return true;
     }
 
+    /** A use press was just taken by the game: the next use to run is that press's. */
+    public static void useConsumed() {
+        PressAim.consumed();
+    }
+
+    /** End of {@code handleKeybinds}: the crosshair's own target again after uses aimed at their presses. */
+    public static void endPass(Minecraft minecraft) {
+        PressAim.restore(minecraft);
+    }
+
     /** Start of {@code handleKeybinds}: held clicks whose anchor is gone run first, in order. */
     public static void beginPass(Minecraft minecraft) {
         hotbarPointReached = false;
         usesThisPass = 0;
         lastUseSlot = -1;
+        lastUseAimed = false;
+        passTarget = null;
+        PressAim.sync(((KeyMappingAccessor) minecraft.options.keyUse).kohsAnchors$clickCount());
         deferring = false;
         if (heldCount > 0) {
             releaseHeld(minecraft);
@@ -381,10 +410,14 @@ public final class AnchorInput {
      * or dropped because it could only fail or misplace a block.
      */
     private static Decision decide(Minecraft minecraft) {
+        // The click goes where the crosshair was when it was pressed, not where the camera is when
+        // the tick runs: two clicks for two anchors in one tick no longer both land on the second.
+        boolean aimed = AnchorsConfig.settings().pressAim && AnchorContext.inAnchorPlay(minecraft)
+                && PressAim.aim(minecraft);
         if (usesThisPass == 0) {
             DetonationPredictor.firstUseOfTick(minecraft.level, targetBlock(minecraft));
         }
-        if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft)) {
+        if (refreshTargetBeforeUse(minecraft, aimed) && mergesRepeat(minecraft)) {
             AnchorStats.mergedClick();
             return Decision.DROP;
         }
@@ -394,16 +427,53 @@ public final class AnchorInput {
             // now, as Vanilla would run it, instead of waiting for a removal only it can bring.
             return Decision.RUN;
         }
-        if (!AnchorsConfig.settings().anchorChain) {
-            return Decision.RUN;
+        BlockPos target = targetBlock(minecraft);
+        if (AnchorsConfig.settings().pressAim && passTarget != null && target != null && !target.equals(passTarget)
+                && AnchorContext.inAnchorPlay(minecraft)) {
+            Decision next = deferToNextTick(minecraft, target);
+            if (next != null) {
+                return next;
+            }
         }
-        return switch (AnchorChain.decide(minecraft)) {
-            case RUN -> Decision.RUN;
-            case RUN_PREDICTED -> Decision.RUN_PREDICTED;
-            case RUN_DETONATED -> Decision.RUN_DETONATED;
-            case DROP -> Decision.DROP;
-            case CATCH_UP -> hold(minecraft, AnchorChain.catchUpTarget());
-        };
+        Decision decision;
+        if (!AnchorsConfig.settings().anchorChain) {
+            decision = Decision.RUN;
+        } else {
+            decision = switch (AnchorChain.decide(minecraft)) {
+                case RUN -> Decision.RUN;
+                case RUN_PREDICTED -> Decision.RUN_PREDICTED;
+                case RUN_DETONATED -> Decision.RUN_DETONATED;
+                case DROP -> Decision.DROP;
+                case CATCH_UP -> hold(minecraft, AnchorChain.catchUpTarget());
+            };
+        }
+        if (passTarget == null && target != null
+                && (decision == Decision.RUN || decision == Decision.RUN_PREDICTED || decision == Decision.RUN_DETONATED)) {
+            passTarget = target.immutable();
+        }
+        return decision;
+    }
+
+    /**
+     * Keeps a click for the next tick, with the rotation it was pressed with: it goes out first
+     * there, where the look direction the server gets is its own. Not while another wait is on.
+     */
+    private static Decision deferToNextTick(Minecraft minecraft, BlockPos target) {
+        if (minecraft.player == null || heldCount == HOLD_CAPACITY || heldCount > 0 && !heldCleared) {
+            return null;
+        }
+        if (heldCount == 0) {
+            heldSince = System.nanoTime();
+            heldFor = target.immutable();
+            heldCleared = true;
+        }
+        int index = heldCount++;
+        HELD_SLOTS[index] = minecraft.player.getInventory().getSelectedSlot();
+        HELD_AIMED[index] = PressAim.pressValid();
+        HELD_YAW[index] = PressAim.pressYaw();
+        HELD_PITCH[index] = PressAim.pressPitch();
+        AnchorStats.heldClick();
+        return Decision.HOLD;
     }
 
     /**
@@ -493,6 +563,9 @@ public final class AnchorInput {
             heldFor = target.immutable();
             heldCleared = false;
         }
+        HELD_AIMED[heldCount] = PressAim.pressValid();
+        HELD_YAW[heldCount] = PressAim.pressYaw();
+        HELD_PITCH[heldCount] = PressAim.pressPitch();
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
         return Decision.HOLD;
@@ -548,6 +621,15 @@ public final class AnchorInput {
                 inventory.setSelectedSlot(HELD_SLOTS[index]);
             }
             Mc.pick(minecraft);
+            if (HELD_AIMED[index] && AnchorsConfig.settings().pressAim) {
+                // Where it was pressed, not where the camera has gone since.
+                PressAim.aimAt(minecraft, HELD_YAW[index], HELD_PITCH[index]);
+            }
+            BlockPos released = targetBlock(minecraft);
+            if (AnchorsConfig.settings().pressAim && passTarget != null && released != null && !released.equals(passTarget)) {
+                // Another look direction than this tick's first click: the next tick.
+                break;
+            }
             if (!stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
                 AnchorStats.droppedClicks(1);
                 continue;
@@ -561,6 +643,9 @@ public final class AnchorInput {
             }
             usesThisPass++;
             lastUseSlot = HELD_SLOTS[index];
+            if (passTarget == null && released != null) {
+                passTarget = released.immutable();
+            }
             run(minecraft, switch (outcome) {
                 case RUN_PREDICTED -> Decision.RUN_PREDICTED;
                 case RUN_DETONATED -> Decision.RUN_DETONATED;
@@ -572,6 +657,9 @@ public final class AnchorInput {
             // The world has their anchor already: they wait only for a tick that has not clicked
             // yet. Or another drawn anchor is on their way: they wait for it.
             System.arraycopy(HELD_SLOTS, index, HELD_SLOTS, 0, count - index);
+            System.arraycopy(HELD_AIMED, index, HELD_AIMED, 0, count - index);
+            System.arraycopy(HELD_YAW, index, HELD_YAW, 0, count - index);
+            System.arraycopy(HELD_PITCH, index, HELD_PITCH, 0, count - index);
             heldCount = count - index;
             heldSince = System.nanoTime();
             heldCleared = !waitAgain;
@@ -592,12 +680,19 @@ public final class AnchorInput {
      *
      * @return whether this use repeats the previous use of this pass with the same item
      */
-    private static boolean refreshTargetBeforeUse(Minecraft minecraft) {
+    private static boolean refreshTargetBeforeUse(Minecraft minecraft, boolean aimed) {
         int slot = minecraft.player == null ? -1 : minecraft.player.getInventory().getSelectedSlot();
-        boolean repeat = usesThisPass > 0 && slot == lastUseSlot;
+        // A use after one that went where its own press was is not a repeat of it: the camera had
+        // already moved on to where this one goes.
+        boolean repeat = usesThisPass > 0 && slot == lastUseSlot && !lastUseAimed;
         lastUseSlot = slot;
+        lastUseAimed = aimed;
         if (usesThisPass++ == 0) {
             // The first use of a tick aims with the raycast Vanilla just made for this tick.
+            return false;
+        }
+        if (aimed) {
+            // Aimed along its own press: no repeat of the click before, and nothing to aim again.
             return false;
         }
         if (repeat) {

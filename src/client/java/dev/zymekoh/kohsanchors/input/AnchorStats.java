@@ -7,6 +7,7 @@ package dev.zymekoh.kohsanchors.input;
 public final class AnchorStats {
     private static int orderedBursts;
     private static int retargetedUses;
+    private static int pressAimedUses;
     private static int predictedDetonations;
     private static int confirmedDetonations;
     private static int heldClicks;
@@ -183,6 +184,14 @@ public final class AnchorStats {
 
     static void orderedBurst() {
         orderedBursts++;
+    }
+
+    static void pressAimed() {
+        pressAimedUses++;
+    }
+
+    public static int pressAimedUses() {
+        return pressAimedUses;
     }
 
     static void retargetedUse() {

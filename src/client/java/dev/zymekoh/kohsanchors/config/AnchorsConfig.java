@@ -124,6 +124,9 @@ public final class AnchorsConfig {
         /** Aims each extra use in a tick at what the crosshair hits after the previous one. */
         public transient boolean freshTarget = true;
 
+        /** Aims each use where the crosshair was when it was pressed, if the camera turned since. */
+        public transient boolean pressAim = true;
+
         /**
          * Sends a click on an anchor this client just detonated at once, as Vanilla does, with what
          * it will do drawn at once ({@code AnchorChain}); the client world follows the server at that

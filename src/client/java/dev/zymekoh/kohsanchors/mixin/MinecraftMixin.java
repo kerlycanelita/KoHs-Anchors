@@ -32,6 +32,12 @@ abstract class MinecraftMixin {
         AnchorInput.beginPass((Minecraft) (Object) this);
     }
 
+    /** End of the pass: uses aimed at their presses leave the crosshair's own target behind. */
+    @Inject(method = "handleKeybinds", at = @At("RETURN"))
+    private void kohsAnchors$endPass(CallbackInfo callback) {
+        AnchorInput.endPass((Minecraft) (Object) this);
+    }
+
     /**
      * Every press Vanilla takes in {@code handleKeybinds}: presses left for the next tick stay
      * queued, so a tick never sends a slot change after one of its clicks. Chains with other mods
