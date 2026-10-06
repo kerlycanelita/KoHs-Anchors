@@ -9,7 +9,8 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ServerData;
 
 /**
- * Where the anchor chain options (the no-wait chain and the instant detonation click) may act.
+ * Where the instant detonation click may act. (The no-wait chain it once had beside it is part of
+ * the core since 0.5.0, made safe by following the server at the anchor's block.)
  *
  * <p>They change when clicks reach the server, which an anticheat can flag and a server can forbid,
  * so the server decides: they act only where its bridge allows them ({@link BridgeClient}), and in
@@ -25,11 +26,6 @@ public final class ServerLock {
     private ServerLock() {
     }
 
-    /** The no-wait chain, when it is on and the server's bridge allows it. */
-    public static boolean fastChain() {
-        return AnchorsConfig.settings().fastChain && BridgeClient.allows(BridgeProtocol.POLICY_FAST_CHAIN);
-    }
-
     /** The instant detonation click, when it is on and the server's bridge allows it. */
     public static boolean instantDetonation() {
         return AnchorsConfig.settings().instantDetonation && BridgeClient.allows(BridgeProtocol.POLICY_INSTANT_DETONATION);
@@ -38,14 +34,13 @@ public final class ServerLock {
     /** Whether any anchor chain option is switched on, allowed here or not. */
     public static boolean anyAdvancedOn() {
         AnchorsConfig.Settings settings = AnchorsConfig.settings();
-        return settings.fastChain || settings.instantDetonation;
+        return settings.instantDetonation;
     }
 
     /** Whether an anchor chain option is on but this server does not allow it. */
     public static boolean suspendedHere() {
         AnchorsConfig.Settings settings = AnchorsConfig.settings();
-        return settings.fastChain && !BridgeClient.allows(BridgeProtocol.POLICY_FAST_CHAIN)
-                || settings.instantDetonation && !BridgeClient.allows(BridgeProtocol.POLICY_INSTANT_DETONATION);
+        return settings.instantDetonation && !BridgeClient.allows(BridgeProtocol.POLICY_INSTANT_DETONATION);
     }
 
     /** The address of the server the player is on, lower case, or an empty string. */

@@ -7,6 +7,8 @@ import dev.zymekoh.kohsanchors.compat.Mc;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
 import dev.zymekoh.kohsanchors.glow.AnchorTracker;
+import dev.zymekoh.kohsanchors.glow.SafeAnchorView;
+import dev.zymekoh.kohsanchors.predict.AnchorFade;
 import dev.zymekoh.kohsanchors.input.AnchorDebounce;
 import dev.zymekoh.kohsanchors.input.AnchorStats;
 import dev.zymekoh.kohsanchors.predict.Latency;
@@ -179,6 +181,7 @@ public final class AnchorsScreen extends Screen {
     private boolean figureDragging;
     private double figureDragDistance;
     private DevModeWarning devWarning;
+    private SafeAnchorWarning safeWarning;
     private CrystalModal crystalModal;
     private SoundPicker soundPicker;
     private ColorPicker enemyPicker;
@@ -383,7 +386,18 @@ public final class AnchorsScreen extends Screen {
         offset = section(offset, "kohs_anchors.section.detonation");
         offset = toggle(offset, "anchor_fade", () -> settings.anchorFade, value -> settings.anchorFade = value,
                 "AnchorFade.start ← DetonationPredictor.detonate", "AnchorFade.submit ← LevelRendererGlowMixin",
-                "submitMovingBlock: a shrinking copy, no block, no collision");
+                "drawing only: no block, no collision · fading now " + AnchorFade.active());
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), this.layout.rowWidth(), label("fade_style"),
+                description("fade_style"), this.font, () -> Component.translatable("kohs_anchors.fade."
+                        + AnchorFade.Style.of(settings.fadeStyle).name().toLowerCase(Locale.ROOT)).getString(), () -> {
+                    settings.fadeStyle = (AnchorFade.Style.of(settings.fadeStyle).ordinal() + 1) % AnchorFade.Style.values().length;
+                    AnchorsConfig.changed();
+                    // The preview plays the new style at once.
+                    this.anchorPreview.playFade();
+                    rebuildWidgets();
+                }, "fade_style", "AnchorFade.Style." + AnchorFade.Style.of(settings.fadeStyle),
+                "SkinCubeTexture.translucent · lightning for the cut, embers and the last line",
+                "inside styles end when an anchor is drawn there again"));
         offset = toggle(offset, "anchor_debris", () -> settings.anchorDebris, value -> settings.anchorDebris = value,
                 "ClientPacketListenerMixin @ handleExplosion trackExplosionEffects",
                 "DetonationPredictor.shouldDrawDebris");
@@ -397,12 +411,34 @@ public final class AnchorsScreen extends Screen {
                     rebuildWidgets();
                 }, "anchor_smoke", "AnchorSmoke.flash ← ClientPacketListenerMixin @ handleExplosion addParticle",
                 "and DetonationPredictor.detonate · config anchorSmoke"));
+        offset = section(offset, "kohs_anchors.section.safe_anchor");
+        // Switching it off is immediate; switching it on says first what it is and is not.
+        offset = addRow(offset, new AnchorSwitchRow(x(), y(offset), this.layout.rowWidth(), label("safe_anchor_view"),
+                description("safe_anchor_view"), this.font, () -> settings.safeAnchorView, () -> {
+                    if (settings.safeAnchorView) {
+                        settings.safeAnchorView = false;
+                        AnchorsConfig.changed();
+                        AnchorsConfig.save();
+                        return;
+                    }
+                    this.safeWarning = new SafeAnchorWarning(settings.interfaceMotion, settings.safeAnchorColor, () -> {
+                        settings.safeAnchorView = true;
+                        AnchorsConfig.changed();
+                        AnchorsConfig.save();
+                    });
+                }, false, null, "safe_anchor_view", "SafeAnchorView: Vanilla's explosion rays, armour, difficulty",
+                SafeAnchorView.describe(), "SafeAnchorWarning before it switches on"));
+        offset = addRow(offset, new AnchorRows.Color(x(), y(offset), this.layout.rowWidth(), label("safe_anchor_color"),
+                description("safe_anchor_color"), this.font, () -> settings.safeAnchorColor, () -> openColorPopover(
+                        "safe_anchor_color", () -> settings.safeAnchorColor, color -> settings.safeAnchorColor = color),
+                () -> settings.safeAnchorView, "safe_anchor_color", "Settings.safeAnchorColor = "
+                        + ColorMath.hex(settings.safeAnchorColor)));
         offset = section(offset, "kohs_anchors.section.core");
         offset = note(offset, "core", () -> Component.translatable("kohs_anchors.core.badge").getString(),
-                AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, hold + drawHeld, mergesRepeat",
-                "held " + AnchorStats.heldClicks() + " · drawn at the press " + AnchorStats.drawnHeldClicks()
-                        + " · dropped " + AnchorStats.droppedClicks() + " · wait " + Latency.answerWindowNanos(700_000_000L,
-                        1_500_000_000L) / 1_000_000L + " ms",
+                AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, AnchorChain, mergesRepeat",
+                "chained " + AnchorStats.chainedClicks() + " · mirrored " + AnchorStats.mirroredStates() + " · caught up "
+                        + AnchorStats.heldClicks() + " · dropped " + AnchorStats.droppedClicks() + " · wait "
+                        + Latency.answerWindowNanos(700_000_000L, 1_500_000_000L) / 1_000_000L + " ms",
                 "DetonationPredictor.showAtInput / onAnchorUsed", "Settings fields transient: not saved");
         offset = section(offset, "kohs_anchors.section.interface");
         offset = toggle(offset, "interface_motion", () -> settings.interfaceMotion, value -> settings.interfaceMotion = value,
@@ -653,9 +689,6 @@ public final class AnchorsScreen extends Screen {
                     }, false, false, "bridge_check", "BridgeClient.recheck() · ServerCheckWindow"));
         }
         offset = section(offset, "kohs_anchors.section.anchor_chain");
-        offset = serverToggle(offset, "fast_chain", BridgeProtocol.POLICY_FAST_CHAIN, () -> settings.fastChain,
-                value -> settings.fastChain = value, OptionFx.Kind.CHAIN, "FastChain.decide ← AnchorInput.decide",
-                "predictions drawn by AnchorVeil", "ServerLock.fastChain(): the bridge's POLICY_FAST_CHAIN");
         offset = serverToggle(offset, "instant_detonation", BridgeProtocol.POLICY_INSTANT_DETONATION,
                 () -> settings.instantDetonation, value -> settings.instantDetonation = value, OptionFx.Kind.INSTANT,
                 "AnchorInput.afterKeyClicked ← KeyMappingMixin @ click TAIL", "startUseItem between client ticks",
@@ -1193,6 +1226,13 @@ public final class AnchorsScreen extends Screen {
             this.devWarning.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
             if (this.devWarning.done()) {
                 this.devWarning = null;
+            }
+        }
+        if (this.safeWarning != null) {
+            this.safeWarning.render(graphics, this.font, this.width, this.height, mouseX, mouseY);
+            if (this.safeWarning.done()) {
+                this.safeWarning = null;
+                rebuildWidgets();
             }
         }
         if (this.crystalModal != null) {
@@ -1955,6 +1995,9 @@ public final class AnchorsScreen extends Screen {
         if (this.devWarning != null) {
             return this.devWarning.mouseClicked(this.width, this.height, mouseX, mouseY, button);
         }
+        if (this.safeWarning != null) {
+            return this.safeWarning.mouseClicked(this.width, this.height, mouseX, mouseY, button);
+        }
         if (this.soundPicker != null) {
             return this.soundPicker.mouseClicked(mouseX, mouseY, button);
         }
@@ -2024,7 +2067,7 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseDragged(MouseButtonEvent event, double dragX, double dragY) {
-        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null || this.enemyIntro != null
                 || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
@@ -2057,7 +2100,7 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseReleased(MouseButtonEvent event) {
-        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
                 || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
@@ -2096,7 +2139,7 @@ public final class AnchorsScreen extends Screen {
 
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double horizontalAmount, double verticalAmount) {
-        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+        if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.popover != null || this.guardWarning != null || this.enemyIntro != null
                 || this.enemySwitch != null || this.herziumWindow != null) {
             return true;
@@ -2156,6 +2199,9 @@ public final class AnchorsScreen extends Screen {
         }
         if (this.devWarning != null) {
             return this.devWarning.keyPressed(key);
+        }
+        if (this.safeWarning != null) {
+            return this.safeWarning.keyPressed(key);
         }
         if (this.soundPicker != null) {
             return this.soundPicker.keyPressed(key);
@@ -2257,6 +2303,9 @@ public final class AnchorsScreen extends Screen {
                 settings.glowstoneGuard = defaults.glowstoneGuard;
                 settings.anchorSmoke = defaults.anchorSmoke;
                 settings.anchorFade = defaults.anchorFade;
+                settings.fadeStyle = defaults.fadeStyle;
+                settings.safeAnchorView = defaults.safeAnchorView;
+                settings.safeAnchorColor = defaults.safeAnchorColor;
                 AnchorDebounce.settingsChanged();
             }
             case ANCHOR -> settings.skin = defaults.skin;
@@ -2276,7 +2325,6 @@ public final class AnchorsScreen extends Screen {
                 settings.herziumIntro = defaults.herziumIntro;
             }
             case SERVER -> {
-                settings.fastChain = false;
                 settings.instantDetonation = false;
                 settings.betterEnemyGlow = defaults.betterEnemyGlow;
                 settings.bridgeLatency = defaults.bridgeLatency;
@@ -2312,7 +2360,7 @@ public final class AnchorsScreen extends Screen {
 
     /** Whether a warning, picker or popover owns the pointer and the keyboard. */
     private boolean modalOpen() {
-        return this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null
+        return this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.popover != null || this.guardWarning != null
                 || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null;
     }

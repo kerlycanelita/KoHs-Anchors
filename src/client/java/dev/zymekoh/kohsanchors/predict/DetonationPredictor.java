@@ -6,7 +6,6 @@ import dev.zymekoh.kohsanchors.input.AnchorDebounce;
 import dev.zymekoh.kohsanchors.input.AnchorStats;
 import dev.zymekoh.kohsanchors.mixin.KeyMappingAccessor;
 import dev.zymekoh.kohsanchors.mixin.ClientLevelPredictionAccessor;
-import dev.zymekoh.kohsanchors.safety.ServerLock;
 import dev.zymekoh.kohsanchors.sound.AnchorSounds;
 import java.util.ArrayDeque;
 import java.util.HashMap;
@@ -88,8 +87,10 @@ public final class DetonationPredictor {
 
     /** Whether the explosion packet being handled right now was already shown. */
     private static boolean handlingPredicted;
-    /** Set while a use runs whose outcome the advanced chain already predicted. */
+    /** Set while a use runs whose detonation the anchor chain already showed. */
     private static boolean usePredictedElsewhere;
+    /** Set while a use runs that the anchor chain drew as an anchor or a charge: not a detonation. */
+    private static boolean useChained;
 
     private DetonationPredictor() {
     }
@@ -103,7 +104,9 @@ public final class DetonationPredictor {
         if (!(level instanceof ClientLevel clientLevel)) {
             return;
         }
-        if (player != Minecraft.getInstance().player || !(result instanceof InteractionResult.Success)) {
+        if (player != Minecraft.getInstance().player || !(result instanceof InteractionResult.Success) || useChained) {
+            // A chained anchor or charge clicked on the old anchor the client still has: the server
+            // places or charges there, it does not explode anything.
             return;
         }
         if (!state.is(Blocks.RESPAWN_ANCHOR) || state.getValue(RespawnAnchorBlock.CHARGE) <= 0
@@ -141,7 +144,7 @@ public final class DetonationPredictor {
         DETONATING.put(key, new Detonation(now));
         BlockState shown = AnchorVeil.predicted(key);
         AnchorFade.start(level, key, shown != null ? shown : level.getBlockState(key));
-        if (AnchorsConfig.settings().hideDetonating || ServerLock.fastChain()) {
+        if (AnchorsConfig.settings().hideDetonating) {
             AnchorVeil.predict(level, key, AnchorVeil.air(), AnchorVeil.air());
         }
         if (!AnchorsConfig.settings().predictDetonation) {
@@ -232,6 +235,36 @@ public final class DetonationPredictor {
         return level.dimensionTypeRegistration().is(BuiltinDimensionTypes.NETHER) || level.dimension() == Level.NETHER
                 || Boolean.TRUE.equals(level.environmentAttributes().getValue(EnvironmentAttributes.RESPAWN_ANCHOR_WORKS,
                         position));
+    }
+
+    /** Runs {@code use} as a use whose anchor or charge the caller has already drawn. */
+    public static void runChained(Runnable use) {
+        useChained = true;
+        try {
+            use.run();
+        } finally {
+            useChained = false;
+        }
+    }
+
+    /** Whether a use the anchor chain drew as an anchor or a charge is running right now. */
+    public static boolean chaining() {
+        return useChained;
+    }
+
+    /**
+     * Whether the client world should show the server's state at {@code position} as soon as it
+     * arrives: an anchor this client is detonating, or one whose next states the chain has drawn.
+     *
+     * <p>Vanilla keeps a server state aside while one of the player's own predictions at that block
+     * waits for its acknowledgement, and goes on drawing and raycasting the predicted block. After an
+     * anchor's charge that is the old, exploded anchor: a click sent then aims at a block the server,
+     * and an anticheat that follows what the client received, already have as air (Grim flags it as
+     * {@code AirLiquidPlace}; Vanilla players spamming anchors with latency get it). Here the server's
+     * state is shown at once instead, so every click aims at what the server has.</p>
+     */
+    public static boolean mirrors(BlockPos position) {
+        return AnchorsConfig.settings().anchorChain && (DETONATING.containsKey(position) || AnchorVeil.isVeiled(position));
     }
 
     /** Runs {@code use} as a use whose outcome the caller has already shown. */

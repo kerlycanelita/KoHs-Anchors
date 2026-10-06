@@ -47,15 +47,15 @@ public final class AnchorStats {
     }
 
     /** Clicks that waited for the server to remove a detonated anchor instead of hitting it. */
-    private static int drawnHeldClicks;
+    private static int mirroredStates;
 
-    /** Held clicks whose outcome was drawn the moment they were pressed. */
-    public static int drawnHeldClicks() {
-        return drawnHeldClicks;
+    /** Server states at a chained anchor shown at once instead of after Vanilla's acknowledgement. */
+    public static int mirroredStates() {
+        return mirroredStates;
     }
 
-    public static void drawnHeldClick() {
-        drawnHeldClicks++;
+    public static void mirroredState() {
+        mirroredStates++;
     }
 
     public static int heldClicks() {

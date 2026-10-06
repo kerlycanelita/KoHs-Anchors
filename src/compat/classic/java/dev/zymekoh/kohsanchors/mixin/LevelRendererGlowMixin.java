@@ -19,5 +19,6 @@ abstract class LevelRendererGlowMixin {
         dev.zymekoh.kohsanchors.glow.EnemySkinRenderer.submit(poses, storage, state.cameraRenderState.pos);
         AnchorGlowRenderer.submit(poses, storage, state.cameraRenderState.pos, state.cameraRenderState.orientation);
         dev.zymekoh.kohsanchors.predict.AnchorFade.submit(poses, storage, state.cameraRenderState.pos);
+        dev.zymekoh.kohsanchors.glow.SafeAnchorView.submit(poses, storage, state.cameraRenderState.pos);
     }
 }

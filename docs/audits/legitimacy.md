@@ -27,33 +27,46 @@ does, so that admins can judge it.
 | --- | --- | --- | --- |
 | Pressed order | Number keys and uses in one tick are applied in the order they were pressed | Vanilla's packets, Vanilla's per-tick shape | Input fix |
 | Fresh target | After a slot change, the next use aims at what the crosshair hits now | Vanilla's use packet | Input fix |
-| Early clicks wait | A click on an anchor that just exploded is held until the server frees the block | Vanilla's packet, later, never sooner | Input fix |
-| No stacked anchors | A double press with the same item joins the first | Fewer packets | Input fix |
+| Immediate chain | A click on an anchor that is still exploding goes out when pressed, at the old anchor, as Vanilla sends it; its outcome is drawn at once | Vanilla's packet, at Vanilla's moment | Input fix |
+| Anchor block follows the server | The server's state of a chained anchor's block is shown when it arrives, not after Vanilla's acknowledgement | Nothing; no click goes to a block the server already removed | Client world sync |
+| No ghost blocks | A chained click places nothing in the client world; a click through a drawn anchor the world does not have yet waits for it (at most 0.7 s) | Vanilla's packet, the same or later | Input fix |
+| No stacked anchors | A double press with the same item joins the first; an anchor on your own uncharged anchor is dropped unless you sneak | Fewer packets | Input fix |
 | Anchor and glowstone debounce, glowstone guard (off by default) | The player's own repeated or misplaced clicks are refused | Fewer packets | Input fix |
 | Instant detonation effects | The explosion's sound and flash play at the press | Nothing | Cosmetic |
-| Held clicks drawn at the press | The anchor or charge a waiting click will make is drawn when it is pressed | Nothing: the click is still sent after the server's removal | Cosmetic |
-| Anchor fade, enemy skin, amethyst wall | Drawn on the client only | Nothing | Cosmetic |
+| Anchor fade (five styles), enemy skin, amethyst wall | Drawn on the client only | Nothing | Cosmetic |
+| Safe anchor view (off by default) | A blinking square where one block would cover the player, worked out from what the client already shows | Nothing: the player places the block | Information, opt-in |
 | Hide the detonated anchor, debris, smoke | Drawn on the client until the server confirms | Nothing | Cosmetic |
 | Anchor skin, glow, enemy colours, sounds | Drawn and played on the client only | Nothing | Cosmetic |
 | Herzium link | Talks to Herzium inside the same client | Nothing | Client only |
 | Server bridge | Says hello on the `kohs_anchors:bridge` plugin channel, only if the server registered it | One hello, the features in use, a ping a second | Server-supported |
 | Better glow enemy anchors | The server's bridge says whether each anchor is yours or someone else's | Nothing more | Server-supported |
-| Anchor chain: no-wait chain, instant detonation click | Changes **when** clicks reach the server | Vanilla's packets, sooner or between ticks | Server-supported, opt-in |
+| Instant detonation click | Changes **when** a detonation reaches the server | Vanilla's packet, between ticks | Server-supported, opt-in |
 
-## The anchor chain
+## The immediate chain is Vanilla's timing
 
-The no-wait chain sends clicks on an exploding anchor without waiting for the server to remove it;
-the instant detonation click sends a detonation the moment it is pressed. Both change when clicks
-arrive, which an anticheat can read as an impossible placement or packet order. So they **only act
-where the server's bridge allows them**:
+A Vanilla player who keeps clicking an anchor that is exploding sends those clicks at once, at the old
+anchor, and the server places the next anchor in its place. KoHs Anchor's sends the same clicks at the
+same moment. What it changes is what the client shows, so that the next click is aimed right: the
+old anchor's block follows the server as soon as its answer arrives, instead of keeping the player's
+own prediction until Vanilla's acknowledgement. That window is where Vanilla players get Grim's
+`AirLiquidPlace` (a click at a block the client has already been told is air); with the block
+following the server it does not exist. Measured in the crater bench of the anchor lab (stone ground
+that each explosion breaks, Grim, 0 to +150 ms): 0 Grim alerts in every bench.
+[core-chain-0.5.0](../research/core-chain-0.5.0.md)
+
+## The instant detonation click
+
+It sends a detonation the moment it is pressed, between client ticks. That changes when the click
+arrives, which an anticheat can read as an impossible packet order. So it **only acts where the
+server's bridge allows it**:
 
 - Off by default in the mod, and off by default in the bridge's `config.yml`
   (`anchor-chain.enabled: false`). The server's admin turns them on.
 - Never on a server without the bridge: the player cannot allow a server, only its admin can.
 - In singleplayer the world is the player's own and they are allowed.
-- With Grim installed and the chain allowed, the bridge tells Grim through its API that the chain is
-  allowed: a flag of the listed checks (by default `AirLiquidPlace`, `PacketOrderE`, `MultiPlace`) is
-  let through only for a player using the chain, and only within 300 ms after that player acted on a
+- With Grim installed and it allowed, the bridge tells Grim through its API that it is allowed: a
+  flag of the listed checks (by default `AirLiquidPlace`, `PacketOrderE`, `MultiPlace`) is let
+  through only for a player using it, and only within 300 ms after that player acted on a
   respawn anchor. Every other check and every other moment stay Grim's. The admin can change or turn
   this off (`anchor-chain.grim-cooperation`).
 

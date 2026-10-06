@@ -12,35 +12,59 @@ The server bridge: the anchor chain only where a server allows it, and what a se
   a bridge its glow turns green and it hops into the tab's column; without one everything turns red, a
   padlock falls on it and the window says which server does not allow the anchor chain and why. In
   singleplayer the bridge is built in. The bridge talks through Fabric API's networking.
-- **The anchor chain moves here** (the no-wait chain and the instant detonation click): it only acts
-  where the server's bridge allows it. The per-server allowing and its two warnings are gone: only the
-  server's admin can allow it.
+- **The instant detonation click moves here**: it only acts where the server's bridge allows it. The
+  per-server allowing and its two warnings are gone: only the server's admin can allow it. (The
+  no-wait chain that stood beside it is part of the core now, made safe: see below.)
 - **Better glow enemy anchors** (new): the server says who placed each anchor, so one of yours never
   shows as an enemy's, even when you share the same hole.
 - **Real latency** (new): a ping to the bridge once a second, used by every wait that depends on the
   connection.
 - Each option, switched on, plays what it does over the anchor column.
 
-### Core: clicks that never feel heavy
+### Core: anchors that explode as fast as you press
 
-- **Held clicks are drawn at the press.** A click on an anchor that is still exploding waits for the
-  server's removal, as before, so the server and its anticheat see exactly what they saw; what it will
-  do, the next anchor in the old one's place or one more charge, is now drawn the moment it is
-  pressed, instead of nothing until the removal and then the whole cycle at once. Nothing is drawn
-  when the click could land elsewhere, and what was drawn is taken back if the click is dropped.
-- **The wait follows the connection.** A held click waits three round trips and a quarter second, 0.7
-  to 1.5 s; the fixed 0.7 s dropped the clicks of players on 200 ms or of a lagging server.
-- **Hide detonated anchor** is part of the core now: always on, corrected by the server's answer.
-- Measured in the anchor lab (26.2, Grim, the pvp kit, Herzium last input, 0 to 150 ms): anchor spam
-  at one action per tick, charges 30 and 10 ms apart with 4 to 6 extra clicks on the exploding anchor
-  and whole cycles inside one tick all land 100 % of the time, with no click wasted and no Grim alert.
-  Only a robot's click every 20 ms loses cycles (30 to 50 %), as 0.4.0 did.
+- **The immediate chain.** A click on an anchor that is still exploding goes out at once, at the old
+  anchor, the packet a Vanilla player sends; the server, which has exploded it by then, puts the next
+  anchor in its place, charges it and detonates it. Up to now these clicks waited for the server's
+  removal and were then aimed again: on the ground of a real fight, which each explosion breaks, that
+  second aim went over the hole or into it, the waiting clicks fell out of step with the next ones,
+  and the anchor stopped exploding at all (seen in a recorded fight on a 26.2 server). What each
+  click will do, the next anchor, its charge, its explosion, is drawn the moment it is pressed.
+- **The anchor's block follows the server.** Vanilla keeps the player's own prediction at a block
+  until the server acknowledges the click, so after a charge the old anchor stays in the world while
+  the server, and an anticheat that follows what the client received, already have air there: a
+  click then is what Grim flags as `AirLiquidPlace`. At an anchor the chain is driving, the world now
+  shows the server's state the moment it arrives, so no click ever goes to a block the server removed.
+- **No ghost blocks.** A chained click places nothing in the client world: Vanilla would put the new
+  anchor beside the old one, or glowstone in the fire it left, where the server does not, and the
+  next clicks would aim at that ghost. A click whose raycast passes through an anchor that is drawn
+  but not in the world yet waits until the world has it, even a click that hits nothing behind it.
+- **No anchor on your fresh anchor.** An anchor clicked on your own anchor that is not charged yet
+  would sit on top of it and put every cycle after one block higher: it is dropped (sneak to stack).
+- **Hide detonated anchor** is part of the core: always on, corrected by the server's answer.
+- **Hero's Anchor Optimizer**, which players remember from 1.21.8, does the first part of this with a
+  replaceable fake anchor, and exists for 1.21.6 to 1.21.11 only; it keeps the old anchor until the
+  acknowledgement, the moment Grim flags. KoHs Anchor's now does it on every version from 1.21.11 to
+  26.3 without that window.
+- Measured in a new **crater** bench of the anchor lab (stone that each explosion breaks, nothing
+  rebuilt between cycles, the player's setup, Grim, 0 to 150 ms): at +100 ms 93 % of the anchors
+  explode, against 13 % with the old core and 60 % for Vanilla; 100 % at 0 and +50 ms; no Grim alert
+  in any bench. The flat-platform benches stay at 100 %.
+  [The write-up](docs/research/core-chain-0.5.0.md).
 
 ### General
 
-- **Anchor fade** (new, on by default): a detonated anchor shrinks, turns and sinks away over half a
-  second instead of vanishing in one frame. Drawing only: the next anchor goes down in its place at
-  once and the fade stops when it does.
+- **Anchor fade** (new, on by default): a detonated anchor goes away with an animation instead of
+  vanishing in one frame, in one of five styles: **Ghost** (the default: it rises and turns to light,
+  the same size all the way, gone in a third of a second), **Sink**, **Shatter** (eight pieces fly out,
+  spin and fall), **Disintegrate** (a cut of light runs down it and burns it into embers) and
+  **Glitch** (slices, split colours, then off like an old screen). Choosing a style plays it in the
+  preview. Drawing only: the next anchor goes down in its place at once.
+- **Safe anchor view** (new, off by default, with a note before it switches on): once your anchor is
+  charged, a square of your colour blinks on the ground where one block would cover you from its
+  blast. It counts what Minecraft counts (the explosion's rays to your hitbox, your armour, the
+  difficulty) and marks nothing when the blast would barely touch you, such as an anchor under a
+  block with you above it. A hint: you place the block.
 - The preview stands in front of an **amethyst wall**: an explosion breaks a ragged crater into it,
   shards flying, and two seconds later the blocks pull themselves back in, the rim first.
 

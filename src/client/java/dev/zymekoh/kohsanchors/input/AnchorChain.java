@@ -1,5 +1,7 @@
 package dev.zymekoh.kohsanchors.input;
 
+import dev.zymekoh.kohsanchors.config.AnchorsConfig;
+import dev.zymekoh.kohsanchors.glow.AnchorTracker;
 import dev.zymekoh.kohsanchors.predict.AnchorVeil;
 import dev.zymekoh.kohsanchors.predict.DetonationPredictor;
 import net.minecraft.client.Minecraft;
@@ -16,15 +18,23 @@ import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * The advanced, not secure chain: clicks on an anchor that is still exploding are not held until
- * the server removes it, and what each click will do is drawn at once.
+ * The anchor chain of the core: a click on an anchor that is still exploding goes out at once, the
+ * way Vanilla sends it, and what it will do is drawn at once.
  *
- * <p>Every click is still one press of the player, sent by Vanilla's own {@code startUseItem} to
- * the block Vanilla's raycast hits, the same packet a Vanilla player clicking the still visible
- * anchor sends. What changes is only that nothing waits: the server receives "detonate, place,
- * charge, detonate" as fast as they were pressed. That is why it is not secure: an anticheat such
- * as Grim can flag a placement against a block the client has not yet seen removed
- * ({@code AirLiquidPlace}), and servers may forbid it.</p>
+ * <p>Every click is one press of the player, sent by Vanilla's own {@code startUseItem} to the block
+ * Vanilla's raycast hits: on an anchor this client detonated, that is the old anchor it still has,
+ * the same packet a Vanilla player clicking it sends. The server, which has exploded it by then,
+ * puts the new anchor in its place, charges it and detonates it: "detonate, place, charge,
+ * detonate" reach it as fast as they were pressed, whatever the latency.</p>
+ *
+ * <p>Up to 0.5.0 these clicks waited on the client for the server's removal and were then aimed
+ * again. On the ground of a real fight, which each explosion breaks, that second aim went over the
+ * hole or into it, and the waiting clicks fell out of step with the next ones: 13 % of the anchors
+ * exploded at +100 ms in the lab, against 60 % for Vanilla. Not waiting is safe because the client
+ * world follows the server at an anchor's block ({@link DetonationPredictor#mirrors}): once the
+ * server's removal arrives, no click is aimed at the old anchor any more, so an anticheat never sees
+ * a click on a block that is air for the client (Grim's {@code AirLiquidPlace}). Vanilla keeps the
+ * old anchor until its acknowledgement and sends exactly those clicks.</p>
  *
  * <p>Each click is judged against what is drawn (the veil's prediction), not against the stale
  * world:</p>
@@ -38,23 +48,28 @@ import net.minecraft.world.phys.Vec3;
  *   until the world has it, so it lands on the anchor instead of on the floor behind it.</li>
  * </ul>
  */
-final class FastChain {
-    enum Outcome { RUN, RUN_PREDICTED, CATCH_UP, DROP }
+final class AnchorChain {
+    /**
+     * {@code RUN_PREDICTED}: an anchor or a charge drawn at once. {@code RUN_DETONATED}: a detonation
+     * shown at once, whose click the predictor stamps.
+     */
+    enum Outcome { RUN, RUN_PREDICTED, RUN_DETONATED, CATCH_UP, DROP }
 
     private static BlockPos catchUpTarget;
 
-    private FastChain() {
+    private AnchorChain() {
     }
 
     static Outcome decide(Minecraft minecraft) {
         LocalPlayer player = minecraft.player;
         ClientLevel level = minecraft.level;
-        if (player == null || level == null || !(minecraft.hitResult instanceof BlockHitResult hit)
-                || hit.getType() != HitResult.Type.BLOCK) {
+        if (player == null || level == null || !(minecraft.hitResult instanceof BlockHitResult hit)) {
             return Outcome.RUN;
         }
-        BlockPos target = hit.getBlockPos();
-        if (DetonationPredictor.anchorsWork(level, target)) {
+        // A miss still has a ray: through an anchor that is drawn but not in the world yet, it is a
+        // click meant for that anchor, and waits for it like any other.
+        BlockPos target = hit.getType() == HitResult.Type.BLOCK ? hit.getBlockPos() : null;
+        if (DetonationPredictor.anchorsWork(level, target != null ? target : player.blockPosition())) {
             return Outcome.RUN;
         }
         ItemStack main = player.getMainHandItem();
@@ -80,7 +95,7 @@ final class FastChain {
                 AnchorStats.droppedClicks(1);
                 return Outcome.DROP;
             }
-            if (main.is(Items.RESPAWN_ANCHOR) && drawn != null) {
+            if (main.is(Items.RESPAWN_ANCHOR) && drawn != null && target != null) {
                 // The world is empty there too: Vanilla places the anchor into the free spot,
                 // and it is drawn at once instead of the air still shown there.
                 AnchorVeil.predict(level, crossed, AnchorVeil.anchor(0), AnchorVeil.anchor(0));
@@ -89,9 +104,23 @@ final class FastChain {
             }
             return Outcome.RUN;
         }
+        if (target == null) {
+            return Outcome.RUN;
+        }
 
         BlockState drawn = AnchorVeil.predicted(target);
         if (drawn == null) {
+            BlockState world = level.getBlockState(target);
+            if (main.is(Items.RESPAWN_ANCHOR) && world.is(Blocks.RESPAWN_ANCHOR)
+                    && world.getValue(RespawnAnchorBlock.CHARGE) == 0
+                    && AnchorTracker.anchors().get(target.asLong()) == AnchorTracker.OWN
+                    && AnchorsConfig.settings().noStacking) {
+                // The player's own anchor, not charged yet: the next anchor clicked on it would sit
+                // on top of it, and every cycle after would aim one block higher. Sneaking still
+                // stacks, as it does in Vanilla.
+                AnchorStats.droppedClicks(1);
+                return Outcome.DROP;
+            }
             // The world as it is; a detonation of it is shown by the predictor as always.
             return Outcome.RUN;
         }
@@ -125,7 +154,7 @@ final class FastChain {
         }
         DetonationPredictor.detonate(level, target);
         AnchorStats.chainedClick();
-        return Outcome.RUN_PREDICTED;
+        return Outcome.RUN_DETONATED;
     }
 
     static BlockPos catchUpTarget() {

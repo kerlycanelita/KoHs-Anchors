@@ -3,7 +3,9 @@ package dev.zymekoh.kohsanchors.mixin;
 import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
 import dev.zymekoh.kohsanchors.glow.AnchorTracker;
 import dev.zymekoh.kohsanchors.predict.DetonationPredictor;
+import dev.zymekoh.kohsanchors.input.AnchorStats;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.multiplayer.prediction.BlockStatePredictionHandler;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.state.BlockState;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,6 +23,14 @@ abstract class ClientLevelServerStateMixin {
     @Inject(method = "setServerVerifiedBlockState", at = @At("HEAD"))
     private void kohsAnchors$serverState(BlockPos position, BlockState state, int flags, CallbackInfo callback) {
         AnchorTracker.onServerBlock((ClientLevel) (Object) this, position, state);
+        if (DetonationPredictor.mirrors(position)) {
+            // An anchor the chain is driving: the world shows the server's state now, not the
+            // player's own prediction until its acknowledgement (DetonationPredictor.mirrors).
+            BlockStatePredictionHandler handler = ((ClientLevelPredictionAccessor) this).kohsAnchors$predictionHandler();
+            if (((BlockStatePredictionAccessor) handler).kohsAnchors$serverVerifiedStates().remove(position.asLong()) != null) {
+                AnchorStats.mirroredState();
+            }
+        }
     }
 
     /**

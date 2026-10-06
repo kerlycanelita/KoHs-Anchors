@@ -5,6 +5,7 @@ import net.minecraft.resources.Identifier;
 import dev.zymekoh.kohsanchors.compat.AnchorBlockPreview;
 import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer;
+import dev.zymekoh.kohsanchors.predict.AnchorFade;
 import dev.zymekoh.kohsanchors.sound.AnchorSounds;
 import java.util.List;
 import net.minecraft.client.Minecraft;
@@ -44,6 +45,8 @@ final class AnchorPreview {
     private static final long AUTO_STEP_NANOS = 560_000_000L;
 
     private final AnchorBlockPreview model = new AnchorBlockPreview();
+    /** The anchor as the chosen fade takes it away, drawn face by face so it can go transparent. */
+    private final AnchorCube fadeCube = new AnchorCube("preview_fade");
     private final Quaternionf rotation = new Quaternionf();
     private final Vector3f translation = new Vector3f();
 
@@ -128,6 +131,7 @@ final class AnchorPreview {
                         this.charge, intro, light);
             }
         } else {
+            drawFade(graphics, area, centerX, centerY, size / 1.9F * this.zoom, now, light);
             drawBlast(graphics, centerX, centerY, size, blast, intro, light);
         }
 
@@ -214,6 +218,141 @@ final class AnchorPreview {
         this.lastTouch = System.nanoTime();
         this.targetZoom = Mth.clamp(this.targetZoom * (amount > 0.0D ? 1.1F : 1.0F / 1.1F), MIN_ZOOM, MAX_ZOOM);
         return true;
+    }
+
+    /** Detonates the anchor now, full, so the fade just chosen plays at once. */
+    void playFade() {
+        long now = System.nanoTime();
+        if (this.blastStartedAt >= 0L) {
+            return;
+        }
+        this.lastTouch = now;
+        this.charge = 4;
+        this.shownCharge = 4.0F;
+        this.blastStartedAt = now;
+        this.craterAt = now;
+        AnchorSounds.previewExplosion();
+    }
+
+    /**
+     * The anchor fade chosen in General, as the world draws it: the anchor goes away during the blast
+     * instead of vanishing with the flash.
+     */
+    private void drawFade(GuiGraphicsExtractor graphics, AnchorsLayout.Rect area, int centerX, int centerY, float scale,
+            long now, int light) {
+        AnchorsConfig.Settings settings = AnchorsConfig.settings();
+        if (!settings.anchorFade || scale < 2.0F || !this.fadeCube.prepare(false)) {
+            return;
+        }
+        AnchorFade.Style style = AnchorFade.Style.of(settings.fadeStyle);
+        float seconds = (now - this.blastStartedAt) / 1_000_000_000.0F;
+        float progress = seconds / (style.millis() / 1000.0F);
+        if (progress >= 1.0F) {
+            return;
+        }
+        this.fadeCube.setCharge(4);
+        this.fadeCube.setView(this.yaw, -this.pitch);
+        int glow = 0xFF000000 | light;
+        graphics.enableScissor(area.x() + 1, area.y() + 1, area.right() - 1, area.bottom() - 1);
+        switch (style) {
+            case GHOST -> {
+                float alpha = (1.0F - progress) * (1.0F - progress);
+                float rise = 0.35F * scale * (1.0F - (1.0F - progress) * (1.0F - progress) * (1.0F - progress));
+                AnchorsUi.glowEllipse(graphics, centerX, Math.round(centerY - rise), Math.round(scale * 0.9F),
+                        Math.round(scale * 0.9F), light, alpha * 0.6F);
+                this.fadeCube.layout(centerX, centerY - rise, scale);
+                this.fadeCube.drawTinted(graphics, alpha * 0.95F, AnchorsTheme.lerp(0xFFFFFFFF, 0xFFD9CCFF, progress));
+            }
+            case SINK -> {
+                float shrink = 1.0F - progress * progress;
+                this.fadeCube.setView(this.yaw + 40.0F * progress * progress, -this.pitch);
+                this.fadeCube.layout(centerX, centerY + 0.2F * scale * progress, scale * shrink);
+                this.fadeCube.drawTinted(graphics, 1.0F, 0xFFFFFF);
+            }
+            case SHATTER -> {
+                float alpha = progress < 0.55F ? 1.0F : 1.0F - (progress - 0.55F) / 0.45F;
+                for (int piece = 0; piece < 8; piece++) {
+                    double angle = Math.toRadians(piece * 45.0D + 22.5D + noise(piece) * 20.0D);
+                    float speed = scale * (2.0F + noise(piece + 8) * 1.4F);
+                    float x = centerX + (float) Math.cos(angle) * (scale * 0.25F + speed * seconds);
+                    float y = centerY + (float) Math.sin(angle) * scale * 0.25F - scale * (2.6F + noise(piece + 16)) * seconds
+                            + scale * 7.0F * seconds * seconds;
+                    graphics.pose().pushMatrix();
+                    graphics.pose().translate(x, y);
+                    graphics.pose().rotate((float) ((noise(piece + 24) - 0.5D) * 14.0D * seconds));
+                    this.fadeCube.drawShard(graphics, piece >= 4, piece % 4, scale * 0.48F, alpha);
+                    graphics.pose().popMatrix();
+                }
+            }
+            case DISINTEGRATE -> {
+                float eased = progress < 0.5F ? 2.0F * progress * progress
+                        : 1.0F - (float) Math.pow(-2.0F * progress + 2.0F, 2) / 2.0F;
+                int top = Math.round(centerY - scale * 0.9F);
+                int bottom = Math.round(centerY + scale * 0.9F);
+                int cut = Math.round(top + (bottom - top) * eased);
+                int left = Math.round(centerX - scale);
+                int right = Math.round(centerX + scale);
+                graphics.enableScissor(left, cut, right, bottom + 2);
+                this.fadeCube.layout(centerX, centerY, scale);
+                this.fadeCube.drawTinted(graphics, 1.0F, 0xFFFFFF);
+                graphics.disableScissor();
+                graphics.fill(left + 2, cut - 1, right - 2, cut + 1, AnchorsTheme.lerp(0xFFFFFFFF, glow, 0.4F));
+                for (int ember = 0; ember < 14; ember++) {
+                    float released = noise(ember + 40);
+                    float age = eased - released;
+                    if (age < 0.0F || age > 0.45F) {
+                        continue;
+                    }
+                    float life = age / 0.45F;
+                    int ex = Math.round(left + (right - left) * noise(ember + 60));
+                    int ey = Math.round(top + (bottom - top) * released - life * scale * 0.7F);
+                    int dot = Math.max(1, Math.round(scale * 0.06F * (1.0F - life)));
+                    graphics.fill(ex, ey, ex + dot, ey + dot, AnchorsTheme.fade(AnchorsTheme.lerp(glow, 0xFF2A0E3F, life), 1.0F - life));
+                }
+            }
+            case GLITCH -> {
+                if (progress < 0.75F) {
+                    int step = (int) (seconds / 0.04F);
+                    int top = Math.round(centerY - scale * 0.9F);
+                    int band = Math.max(1, Math.round(scale * 0.45F));
+                    int left = Math.round(centerX - scale * 1.3F);
+                    int right = Math.round(centerX + scale * 1.3F);
+                    if (step % 2 == 0) {
+                        float split = scale * (0.05F + 0.08F * noise(step));
+                        this.fadeCube.layout(centerX + split, centerY, scale);
+                        this.fadeCube.drawTinted(graphics, 0.45F, 0xFF4060);
+                        this.fadeCube.layout(centerX - split, centerY, scale);
+                        this.fadeCube.drawTinted(graphics, 0.45F, 0x30E6FF);
+                    }
+                    for (int slice = 0; slice < 4; slice++) {
+                        if (noise(step * 4 + slice + 100) > 0.85F - 0.6F * progress) {
+                            continue;
+                        }
+                        float shift = noise(step * 4 + slice + 200) < 0.5F ? 0.0F
+                                : (noise(step * 4 + slice + 300) - 0.5F) * scale * 0.3F;
+                        graphics.enableScissor(left, top + slice * band, right, top + (slice + 1) * band);
+                        this.fadeCube.layout(centerX + shift, centerY, scale);
+                        this.fadeCube.drawTinted(graphics, 1.0F, 0xFFFFFF);
+                        graphics.disableScissor();
+                    }
+                } else {
+                    float off = (progress - 0.75F) / 0.25F;
+                    int half = Math.max(1, Math.round(scale * 0.9F * (1.0F - off) * (1.0F - off) * (1.0F - off)));
+                    int wide = Math.round(scale * (1.0F + 0.4F * off));
+                    graphics.fill(centerX - wide, centerY - half, centerX + wide, centerY + half,
+                            AnchorsTheme.fade(AnchorsTheme.lerp(0xFFFFFFFF, glow, off), 1.0F - off));
+                }
+            }
+        }
+        graphics.disableScissor();
+    }
+
+    /** A number from 0 to 1 that is the same for the same index, for the shards and embers. */
+    private static float noise(int index) {
+        int mixed = index * 0x27D4EB2D + 0x165667B1;
+        mixed = (mixed ^ mixed >>> 15) * 0x85EBCA6B;
+        mixed ^= mixed >>> 13;
+        return (mixed & 0xFFFF) / 65535.0F;
     }
 
     /** One glowstone, or the detonation of a full anchor. */

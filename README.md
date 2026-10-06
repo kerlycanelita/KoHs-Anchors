@@ -67,12 +67,17 @@ What made KoHs Anchor's land your clicks right is no longer optional.
 - **Fresh target.** A second use in the same tick, after you switched items, aims at what your
   crosshair hits after the first one, such as the anchor you just placed, using Minecraft's own
   raycast. A repeat with the same item keeps its target, so a double click never stacks an anchor.
-- **Early clicks wait.** A click on an anchor you just detonated, made before the server has
-  removed it, waits and lands the moment the server's removal arrives, aimed at the free block
-  and with the item you pressed it with. Vanilla spends it on the old anchor and loses it.
-- **No stacked anchors.** A second click with the same item in the same tick is a double click:
-  it joins the first one instead of stacking a second anchor on grass, snow or the fire an
-  explosion leaves. Charging with glowstone is not limited.
+- **Immediate chain.** A click on an anchor you just detonated goes out at once, at the old anchor,
+  as Vanilla sends it, and the server puts the next anchor in its place: place, charge and detonate
+  keep your rhythm whatever your ping. What each click will do is drawn at once, and the client never
+  places a ghost block beside the old anchor.
+- **The anchor's block follows the server.** The moment the server's answer for that block arrives,
+  your world shows it, instead of keeping your own prediction until Vanilla's acknowledgement. No
+  click goes out at a block the server already removed, which is what Grim flags as
+  `AirLiquidPlace` when Vanilla players spam anchors with latency.
+- **No stacked anchors.** A second click with the same item in the same tick joins the first one,
+  and an anchor clicked on your own anchor that is not charged yet is dropped (sneak to stack).
+  Charging with glowstone is not limited.
 - **Instant detonation effects.** Using a charged anchor where anchors explode plays the
   explosion's sound and flash the moment you press use, instead of a tick and a round trip later.
 
@@ -162,15 +167,10 @@ Bukkit, Purpur, Folia, Velocity and BungeeCord, one jar for 1.21.11 to 26.3). Op
 server: an anchor falls into a window and turns green and hops into the tab with a bridge, or turns
 red under a padlock without one. In singleplayer the bridge is built in. It talks through Fabric API.
 
-- **Anchor chain**, off by default and only where the server's bridge allows it:
-  - **No-wait chain**: clicks on an exploding anchor go out at once instead of waiting for the
-    server, and the next anchor, its charge and its explosion are drawn at once. It never places a
-    glowstone block where an anchor should be and never stacks anchors.
-  - **Instant detonation click**: a click that detonates an anchor is sent the moment you press
-    it, between game ticks, up to 50 ms sooner.
-
-  Both change when your clicks reach the server, so only the server's admin can allow them, and the
-  bridge can tell Grim through its API that they are allowed there. The player can never allow a
+- **Instant detonation click**, off by default and only where the server's bridge allows it: a
+  click that detonates an anchor is sent the moment you press it, between game ticks, up to 50 ms
+  sooner. It changes when your click reaches the server, so only the server's admin can allow it,
+  and the bridge can tell Grim through its API that it is allowed there. The player can never allow a
   server.
 - **Better glow enemy anchors**: the server says who placed each anchor, so one of yours never shows
   as an enemy's.
@@ -183,11 +183,13 @@ Every feature, what it sends and how it was measured: the
 
 Every action is one press Minecraft already counted. The mod never creates or repeats a press,
 never selects a slot you did not press, never touches the repeat delay of a held key, never
-writes a packet of its own, never extends reach and never changes a block in your world. Presses
-run later than Vanilla would run them in two cases only: the rest of a burst that waits for the next
-tick to keep Vanilla's tick shape, and an early click on a detonating anchor (at most six wait, for
-at most 0.7 s, each applied at most once). Debounce and glowstone guard only ever remove your own
-clicks. Damage, knockback, blocks and the explosion itself are decided by the server.
+writes a packet of its own and never extends reach. The only block it changes in your world is a
+chained anchor's, and only to the server's own state, sooner. Presses run later than Vanilla would
+run them in two cases only: the rest of a burst that waits for the next tick to keep Vanilla's tick
+shape, and a click whose crosshair passes through an anchor that is drawn but not in your world yet
+(at most six wait, for at most 0.7 s, each applied at most once). Debounce and glowstone guard only
+ever remove your own clicks. Damage, knockback, blocks and the explosion itself are decided by the
+server.
 
 Reordering is only used for anchor play: an anchor or glowstone in hand or in a pressed slot, or
 the crosshair on an anchor. Bursts that also open the inventory, swap hands, drop, attack or aim

@@ -262,9 +262,6 @@ public final class BridgeClient {
     private static int wanted() {
         AnchorsConfig.Settings settings = AnchorsConfig.settings();
         int bits = 0;
-        if (settings.fastChain) {
-            bits |= BridgeProtocol.POLICY_FAST_CHAIN;
-        }
         if (settings.instantDetonation) {
             bits |= BridgeProtocol.POLICY_INSTANT_DETONATION;
         }

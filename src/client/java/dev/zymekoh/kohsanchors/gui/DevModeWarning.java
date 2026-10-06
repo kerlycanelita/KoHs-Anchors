@@ -21,7 +21,7 @@ final class DevModeWarning {
     private static final long CLOSE_NANOS = 180_000_000L;
     private static final String[] CLASSES = {
             "dev.zymekoh.kohsanchors.input.AnchorInput", "dev.zymekoh.kohsanchors.input.AnchorDebounce",
-            "dev.zymekoh.kohsanchors.input.FastChain", "dev.zymekoh.kohsanchors.predict.DetonationPredictor",
+            "dev.zymekoh.kohsanchors.input.AnchorChain", "dev.zymekoh.kohsanchors.predict.DetonationPredictor",
             "dev.zymekoh.kohsanchors.predict.AnchorVeil", "dev.zymekoh.kohsanchors.skin.AtlasSkin",
             "dev.zymekoh.kohsanchors.skin.SkinComposer", "dev.zymekoh.kohsanchors.glow.AnchorGlowRenderer",
             "dev.zymekoh.kohsanchors.glow.AnchorTracker", "dev.zymekoh.kohsanchors.sound.AnchorSounds",

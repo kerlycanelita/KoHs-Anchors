@@ -21,8 +21,9 @@ sends them, and never adds a click of its own.
 - **Vanilla's tick shape** — one slot change per tick, before that tick's clicks, like Vanilla. 0
   alerts against Grim in its strict configuration.
 - **Fresh target** — after you switch items, the next use aims at what your crosshair hits now.
-- **Early clicks wait** — a click on an anchor you just detonated lands the moment the server frees
-  the block, instead of being lost on the old anchor.
+- **Immediate chain** — a click on an anchor you just detonated goes out at once, as Vanilla sends
+  it, and the server puts the next anchor in its place, whatever your ping. Your world follows the
+  server at that block, so no click goes to a block it already removed.
 - **No stacked anchors** — a double click with the same item joins the first one.
 - **Instant detonation effects** — the explosion's sound and flash the moment you press use.
 
@@ -61,10 +62,8 @@ Measured in the KoHs Anchor lab against a Grim Anticheat server with up to +150 
 **100 % of anchors, no lost click and no Grim alert**. The write-ups are
 [on GitHub](https://github.com/kerlycanelita/KoHs-Anchors/tree/main/docs).
 
-**Advanced · not secure** — two options, off by default, change *when* your clicks reach the server:
-**No-wait chain** and **Instant detonation click**. Anticheats may flag them and many servers ban
-them. They take two warnings and only act in singleplayer, on your local network and on servers you
-allow one by one. **Check your server's rules.**
+**Instant detonation click** — off by default, it changes *when* a detonation reaches the server, so
+it only acts where the server's own bridge plugin allows it. **Check your server's rules.**
 
 ## Download
 

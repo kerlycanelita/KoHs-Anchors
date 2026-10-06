@@ -7,6 +7,8 @@
   "client": [
     "AnimationStateAccessor",
     "BlockLightEngineMixin",
+    "BlockStatePredictionAccessor",
+    "ChainedPlacementMixin",
     "ClientLevelPredictionAccessor",
     "ClientLevelServerStateMixin",
     "ClientPacketListenerMixin",

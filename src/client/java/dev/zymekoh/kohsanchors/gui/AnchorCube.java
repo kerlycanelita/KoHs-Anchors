@@ -303,6 +303,53 @@ final class AnchorCube {
         }
     }
 
+    /** The anchor alone, every face multiplied by {@code tint} (RGB): the preview's fades. */
+    void drawTinted(GuiGraphicsExtractor graphics, float alpha, int tint) {
+        if (this.texture == null || alpha <= 0.01F) {
+            return;
+        }
+        int size = this.resolution;
+        int textureSize = size * 3;
+        for (Direction direction : DIRECTIONS) {
+            if (!this.visible[direction.ordinal()]) {
+                continue;
+            }
+            int column = direction == Direction.UP ? 0 : direction == Direction.DOWN ? 2 : 1;
+            float shade = switch (direction) {
+                case UP -> 1.0F;
+                case DOWN -> 0.5F;
+                case NORTH, SOUTH -> 0.82F;
+                default -> 0.64F;
+            };
+            int r = Math.round((tint >> 16 & 0xFF) * shade);
+            int g = Math.round((tint >> 8 & 0xFF) * shade);
+            int b = Math.round((tint & 0xFF) * shade);
+            graphics.pose().pushMatrix();
+            graphics.pose().mul(this.faces[direction.ordinal()]);
+            graphics.blit(RenderPipelines.GUI_TEXTURED, this.textureId, 0, 0, column * size, 0, size, size, textureSize, textureSize,
+                    Math.round(255.0F * Math.min(1.0F, alpha)) << 24 | r << 16 | g << 8 | b);
+            graphics.pose().popMatrix();
+        }
+    }
+
+    /**
+     * One quarter of a face's texture ({@code quarter} 0 to 3), {@code size} pixels wide, centred on
+     * the current pose's origin: a shard of the preview's shatter.
+     */
+    void drawShard(GuiGraphicsExtractor graphics, boolean top, int quarter, float size, float alpha) {
+        if (this.texture == null || alpha <= 0.01F) {
+            return;
+        }
+        int half = Math.max(1, this.resolution / 2);
+        int u = (top ? 0 : this.resolution) + (quarter & 1) * half;
+        int v = (quarter >> 1 & 1) * half;
+        graphics.pose().pushMatrix();
+        graphics.pose().scale(size / half, size / half);
+        graphics.blit(RenderPipelines.GUI_TEXTURED, this.textureId, -half / 2, -half / 2, u, v, half, half,
+                this.resolution * 3, this.resolution * 3, Math.round(255.0F * Math.min(1.0F, alpha)) << 24 | 0xFFFFFF);
+        graphics.pose().popMatrix();
+    }
+
     /**
      * The reference squares over the layer being edited: a thin line between two of its pixels, a
      * little stronger every four (eight from 32x up), and a double line where it meets the other

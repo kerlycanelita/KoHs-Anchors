@@ -124,8 +124,12 @@ public final class AnchorsConfig {
         /** Aims each extra use in a tick at what the crosshair hits after the previous one. */
         public transient boolean freshTarget = true;
 
-        /** Holds a click aimed at an anchor this client just detonated until the server removes it. */
-        public transient boolean holdEarlyClicks = true;
+        /**
+         * Sends a click on an anchor this client just detonated at once, as Vanilla does, with what
+         * it will do drawn at once ({@code AnchorChain}); the client world follows the server at that
+         * block, so no click goes out at an anchor the server already removed.
+         */
+        public transient boolean anchorChain = true;
 
         /** Joins a second use with the same item in the same tick to the first, in anchor play. */
         public transient boolean noStacking = true;
@@ -134,8 +138,8 @@ public final class AnchorsConfig {
         public transient boolean predictDetonation = true;
 
         /**
-         * Draws a detonated anchor as gone the moment it is used, and what clicks held for the
-         * server will do; the world is not changed. Core since 0.5.0: it is what makes the clicks
+         * Draws a detonated anchor as gone the moment it is used, and what the clicks after it will
+         * do; the world is not changed. Core since 0.5.0: it is what makes the clicks
          * feel immediate, and the server's answer always corrects it.
          */
         public transient boolean hideDetonating = true;
@@ -144,8 +148,21 @@ public final class AnchorsConfig {
         // General.
         // ------------------------------------------------------------------------------------
 
-        /** A detonated anchor shrinks away over half a second instead of vanishing; drawing only. */
+        /** A detonated anchor goes away with an animation instead of vanishing; drawing only. */
         public boolean anchorFade = true;
+
+        /** Which animation: 0 ghost, 1 sink, 2 shatter, 3 disintegrate, 4 glitch ({@code AnchorFade.Style}). */
+        public int fadeStyle = 0;
+
+        /**
+         * Once the player's own anchor is charged, a blinking square marks where one block would cover
+         * them from its explosion ({@code SafeAnchorView}). Off by default: information, but some
+         * servers may count helpers.
+         */
+        public boolean safeAnchorView = false;
+
+        /** The square's colour, ARGB. */
+        public int safeAnchorColor = 0xFF35D8FF;
 
         /** Keeps Vanilla's block debris particles for anchor explosions. */
         public boolean anchorDebris = true;
@@ -188,12 +205,6 @@ public final class AnchorsConfig {
         // Anchors Server. The anchor chain options are off by default and only act where a
         // server's bridge allows them (or in singleplayer, where the world is the player's).
         // ------------------------------------------------------------------------------------
-
-        /**
-         * Clicks on an exploding anchor are sent at once instead of waiting for the server's
-         * removal, and what they will do is drawn at once.
-         */
-        public boolean fastChain = false;
 
         /**
          * A click that detonates an anchor is sent the moment it is pressed, between client ticks,
@@ -243,6 +254,8 @@ public final class AnchorsConfig {
             this.anchorDebounceMillis = clamp(this.anchorDebounceMillis, 0, MAX_DEBOUNCE_MILLIS);
             this.glowstoneDebounceMillis = clamp(this.glowstoneDebounceMillis, 0, MAX_DEBOUNCE_MILLIS);
             this.anchorSmoke = clamp(this.anchorSmoke, 0, 2);
+            this.fadeStyle = clamp(this.fadeStyle, 0, 4);
+            this.safeAnchorColor |= 0xFF000000;
             if (this.skin == null) {
                 this.skin = new Skin();
             }
