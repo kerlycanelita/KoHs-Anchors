@@ -91,7 +91,6 @@ final class AnchorChain {
             return Outcome.RUN;
         }
 
-        noteCharge(level, target, main, off);
         Vec3 eye = player.getEyePosition();
         BlockPos crossed = AnchorVeil.firstAlong(eye, hit.getLocation(), target);
         if (crossed != null) {
@@ -125,13 +124,6 @@ final class AnchorChain {
         if (drawn == null) {
             BlockState world = level.getBlockState(target);
             if (main.is(Items.RESPAWN_ANCHOR) && world.is(Blocks.RESPAWN_ANCHOR)
-                    && world.getValue(RespawnAnchorBlock.CHARGE) == 0 && chargeInFlight(target)) {
-                // Glowstone is on its way to this anchor: the server detonates it with this click.
-                DetonationPredictor.detonate(level, target);
-                AnchorStats.chainedClick();
-                return Outcome.RUN_DETONATED;
-            }
-            if (main.is(Items.RESPAWN_ANCHOR) && world.is(Blocks.RESPAWN_ANCHOR)
                     && world.getValue(RespawnAnchorBlock.CHARGE) == 0
                     && AnchorTracker.anchors().get(target.asLong()) == AnchorTracker.OWN
                     && AnchorsConfig.settings().noStacking) {
@@ -163,11 +155,6 @@ final class AnchorChain {
             AnchorVeil.predict(level, target, AnchorVeil.anchor(charge + 1), AnchorVeil.anchor(charge + 1));
             AnchorStats.chainedClick();
             return Outcome.RUN_PREDICTED;
-        }
-        if (charge == 0 && main.is(Items.RESPAWN_ANCHOR) && chargeInFlight(target)) {
-            DetonationPredictor.detonate(level, target);
-            AnchorStats.chainedClick();
-            return Outcome.RUN_DETONATED;
         }
         if (charge == 0) {
             if (main.is(Items.RESPAWN_ANCHOR)) {

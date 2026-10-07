@@ -411,7 +411,7 @@ public final class AnchorInput {
         if (usesThisPass == 0) {
             DetonationPredictor.firstUseOfTick(minecraft.level, targetBlock(minecraft));
         }
-        if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft) && !doubleAnchor(minecraft)) {
+        if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft)) {
             AnchorStats.mergedClick();
             return Decision.DROP;
         }
@@ -510,16 +510,6 @@ public final class AnchorInput {
         }
         int slot = minecraft.player.getInventory().getSelectedSlot();
         if (heldCount > 0 && HELD_SLOTS[heldCount - 1] == slot) {
-            if (heldDoubleAnchor(minecraft)) {
-                // The double anchor, waiting for its anchor like the glowstone before it: the first
-                // click detonates the anchor, this one puts the next in its place. Both go.
-                HELD_DOUBLE[heldCount - 1] = true;
-                HELD_DOUBLE[heldCount] = true;
-                HELD_SLOTS[heldCount++] = slot;
-                AnchorStats.heldClick();
-                AnchorStats.doubleAnchor();
-                return Decision.HOLD;
-            }
             // Another click with the same item for the same anchor: the one already waiting does
             // what it asks for; applied twice it would stack an anchor or waste a charge.
             AnchorStats.mergedClick();
@@ -608,7 +598,7 @@ public final class AnchorInput {
             }
             Mc.pick(minecraft);
             // A double anchor's clicks detonate an anchor and put one in its place: the chain judges them.
-            if (!HELD_DOUBLE[index] && !stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
+            if (!stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
                 AnchorStats.droppedClicks(1);
                 continue;
             }
