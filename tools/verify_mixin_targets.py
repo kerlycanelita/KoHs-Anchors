@@ -268,6 +268,14 @@ def check_version(version):
     light_engine = disassemble(version, "net.minecraft.world.level.lighting.LightEngine")
     if not re.search(r"protected final net\.minecraft\.world\.level\.chunk\.LightChunkGetter chunkSource;", light_engine):
         problems.append("LightEngine.chunkSource is missing")
+    # 0.5.1: the client's light engines read a veiled block as drawn (LightEngineVeilMixin).
+    if not re.search(r"protected net\.minecraft\.world\.level\.block\.state\.BlockState getState\(net\.minecraft\.core\.BlockPos\);",
+                     light_engine):
+        problems.append("LightEngine.getState(BlockPos) is missing")
+    for engine in ("BlockLightEngine", "SkyLightEngine"):
+        body = disassemble(version, f"net.minecraft.world.level.lighting.{engine}")
+        if not calls(body.splitlines(), r"getState:\(Lnet/minecraft/core/BlockPos;\)Lnet/minecraft/world/level/block/state/BlockState;"):
+            problems.append(f"{engine} no longer reads its blocks through LightEngine.getState")
     level_light = disassemble(version, "net.minecraft.world.level.lighting.LevelLightEngine")
     if not re.search(r"public void checkBlock\(net\.minecraft\.core\.BlockPos\);", level_light):
         problems.append("LevelLightEngine.checkBlock(BlockPos) is missing")

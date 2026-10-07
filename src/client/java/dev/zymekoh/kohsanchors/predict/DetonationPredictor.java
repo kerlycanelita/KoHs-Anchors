@@ -267,6 +267,11 @@ public final class DetonationPredictor {
         return AnchorsConfig.settings().anchorChain && (DETONATING.containsKey(position) || AnchorVeil.isVeiled(position));
     }
 
+    /** Whether a use whose detonation the chain already showed is running right now. */
+    public static boolean runningDetonation() {
+        return usePredictedElsewhere;
+    }
+
     /** Runs {@code use} as a use whose outcome the caller has already shown. */
     public static void runPredicted(Runnable use) {
         usePredictedElsewhere = true;
@@ -447,7 +452,7 @@ public final class DetonationPredictor {
         return level.getBlockState(BlockPos.containing(center)).is(Blocks.RESPAWN_ANCHOR);
     }
 
-    static boolean isCharged(BlockState state) {
+    public static boolean isCharged(BlockState state) {
         return state.is(Blocks.RESPAWN_ANCHOR) && state.getValue(RespawnAnchorBlock.CHARGE) > 0;
     }
 

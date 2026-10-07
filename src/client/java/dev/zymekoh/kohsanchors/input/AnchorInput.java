@@ -22,6 +22,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -96,6 +97,8 @@ public final class AnchorInput {
     private static final long HOLD_TIMEOUT_NANOS = 700_000_000L;
     private static final long HOLD_TIMEOUT_MAX_NANOS = 1_500_000_000L;
     private static final int[] HELD_SLOTS = new int[HOLD_CAPACITY];
+    /** The two clicks of a double anchor waiting together: the detonation and the next anchor. */
+    private static final boolean[] HELD_DOUBLE = new boolean[HOLD_CAPACITY];
 
     private static boolean hotbarPointReached;
     private static int usesThisPass;
@@ -189,6 +192,7 @@ public final class AnchorInput {
         BlockState drawn = AnchorVeil.predicted(target);
         BlockState state = drawn != null ? drawn : minecraft.level.getBlockState(target);
         if (!DetonationPredictor.willDetonate(minecraft.level, target, state, minecraft.player)) {
+            instantDoubleAnchor(minecraft, hit, drawn);
             return;
         }
         if (drawn == null && DetonationPredictor.isDetonating(target)) {
@@ -205,6 +209,29 @@ public final class AnchorInput {
         }
         if (drawn == null && (settings.predictDetonation || settings.hideDetonating)) {
             DetonationPredictor.showAtInput(minecraft, target);
+        }
+    }
+
+    /**
+     * The second click of a double anchor, with the instant detonation click of the server's bridge:
+     * the anchor its first click detonated a moment ago is drawn as gone, and this click with anchors
+     * puts the next one in its place. It goes out now too, right behind the detonation, drawn at once,
+     * instead of on the next tick.
+     */
+    private static void instantDoubleAnchor(Minecraft minecraft, BlockHitResult hit, BlockState drawn) {
+        BlockPos target = hit.getBlockPos();
+        if (!ServerLock.instantDoubleAnchor() || drawn == null || drawn.is(Blocks.RESPAWN_ANCHOR)
+                || !minecraft.player.getMainHandItem().is(Items.RESPAWN_ANCHOR) || !DetonationPredictor.isDetonating(target)
+                || AnchorVeil.firstAlong(minecraft.player.getEyePosition(), hit.getLocation(), target) != null) {
+            return;
+        }
+        Options options = minecraft.options;
+        if ((tickSlot < 0 || minecraft.player.getInventory().getSelectedSlot() == tickSlot)
+                && pending(options.keyUse) && options.keyUse.consumeClick()) {
+            JOURNAL.forgetLastUse();
+            AnchorVeil.predict(minecraft.level, target, AnchorVeil.anchor(0), AnchorVeil.anchor(0));
+            DetonationPredictor.runChained(() -> ((MinecraftUseInvoker) minecraft).kohsAnchors$startUseItem());
+            AnchorStats.doubleAnchor();
         }
     }
 
@@ -384,7 +411,7 @@ public final class AnchorInput {
         if (usesThisPass == 0) {
             DetonationPredictor.firstUseOfTick(minecraft.level, targetBlock(minecraft));
         }
-        if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft)) {
+        if (refreshTargetBeforeUse(minecraft) && mergesRepeat(minecraft) && !doubleAnchor(minecraft)) {
             AnchorStats.mergedClick();
             return Decision.DROP;
         }
@@ -483,6 +510,16 @@ public final class AnchorInput {
         }
         int slot = minecraft.player.getInventory().getSelectedSlot();
         if (heldCount > 0 && HELD_SLOTS[heldCount - 1] == slot) {
+            if (heldDoubleAnchor(minecraft)) {
+                // The double anchor, waiting for its anchor like the glowstone before it: the first
+                // click detonates the anchor, this one puts the next in its place. Both go.
+                HELD_DOUBLE[heldCount - 1] = true;
+                HELD_DOUBLE[heldCount] = true;
+                HELD_SLOTS[heldCount++] = slot;
+                AnchorStats.heldClick();
+                AnchorStats.doubleAnchor();
+                return Decision.HOLD;
+            }
             // Another click with the same item for the same anchor: the one already waiting does
             // what it asks for; applied twice it would stack an anchor or waste a charge.
             AnchorStats.mergedClick();
@@ -493,9 +530,31 @@ public final class AnchorInput {
             heldFor = target.immutable();
             heldCleared = false;
         }
+        HELD_DOUBLE[heldCount] = false;
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
         return Decision.HOLD;
+    }
+
+    /**
+     * Whether a second click with anchors, after one with anchors already waiting, is a double
+     * anchor's: the waiting one will detonate the anchor (charged by glowstone waiting before it, or
+     * drawn charged already), and is not itself the second click of a pair.
+     */
+    private static boolean heldDoubleAnchor(Minecraft minecraft) {
+        if (!minecraft.player.getMainHandItem().is(Items.RESPAWN_ANCHOR) || HELD_DOUBLE[heldCount - 1]
+                || !AnchorsConfig.settings().anchorChain) {
+            return false;
+        }
+        Inventory inventory = minecraft.player.getInventory();
+        for (int index = 0; index < heldCount - 1; index++) {
+            if (inventory.getItem(HELD_SLOTS[index]).is(Items.GLOWSTONE)) {
+                return true;
+            }
+        }
+        BlockState drawn = AnchorVeil.predicted(heldFor);
+        BlockState state = drawn != null ? drawn : minecraft.level.getBlockState(heldFor);
+        return DetonationPredictor.isCharged(state);
     }
 
     /**
@@ -548,7 +607,8 @@ public final class AnchorInput {
                 inventory.setSelectedSlot(HELD_SLOTS[index]);
             }
             Mc.pick(minecraft);
-            if (!stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
+            // A double anchor's clicks detonate an anchor and put one in its place: the chain judges them.
+            if (!HELD_DOUBLE[index] && !stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
                 AnchorStats.droppedClicks(1);
                 continue;
             }
@@ -572,6 +632,7 @@ public final class AnchorInput {
             // The world has their anchor already: they wait only for a tick that has not clicked
             // yet. Or another drawn anchor is on their way: they wait for it.
             System.arraycopy(HELD_SLOTS, index, HELD_SLOTS, 0, count - index);
+            System.arraycopy(HELD_DOUBLE, index, HELD_DOUBLE, 0, count - index);
             heldCount = count - index;
             heldSince = System.nanoTime();
             heldCleared = !waitAgain;
@@ -616,6 +677,27 @@ public final class AnchorInput {
             AnchorStats.retargetedUse();
         }
         return false;
+    }
+
+    /**
+     * The double anchor: a double click with anchors on the player's charged anchor, both clicks in
+     * one tick. The first detonates it; the second is the next anchor, which the server puts where
+     * the old one exploded. Vanilla sends both, so the second is not a double click that could stack:
+     * it goes on to the chain, which draws the new anchor at once. A third click finds that anchor
+     * drawn and is a repeat again.
+     */
+    private static boolean doubleAnchor(Minecraft minecraft) {
+        BlockPos target = targetBlock(minecraft);
+        if (target == null || minecraft.player == null || !AnchorsConfig.settings().anchorChain
+                || !minecraft.player.getMainHandItem().is(Items.RESPAWN_ANCHOR) || !DetonationPredictor.isDetonating(target)) {
+            return false;
+        }
+        BlockState drawn = AnchorVeil.predicted(target);
+        if (drawn == null || drawn.is(Blocks.RESPAWN_ANCHOR)) {
+            return false;
+        }
+        AnchorStats.doubleAnchor();
+        return true;
     }
 
     /**

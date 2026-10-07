@@ -213,6 +213,13 @@ public final class AnchorsConfig {
         public boolean instantDetonation = false;
 
         /**
+         * With the instant detonation click: the second click of a double anchor (a double click with
+         * anchors on the player's charged anchor) is sent at the press too, right behind the
+         * detonation, so the next anchor reaches the server in the same moment.
+         */
+        public boolean instantDoubleAnchor = false;
+
+        /**
          * Better glow enemy anchors: with a server's bridge, the server says who placed each
          * anchor, so a placement of the player's never shows as an enemy's and the other way
          * round.

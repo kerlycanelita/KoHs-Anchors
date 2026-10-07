@@ -31,6 +31,11 @@ public final class ServerLock {
         return AnchorsConfig.settings().instantDetonation && BridgeClient.allows(BridgeProtocol.POLICY_INSTANT_DETONATION);
     }
 
+    /** The double anchor's second click sent at the press too: only with the instant detonation click. */
+    public static boolean instantDoubleAnchor() {
+        return AnchorsConfig.settings().instantDoubleAnchor && instantDetonation();
+    }
+
     /** Whether any anchor chain option is switched on, allowed here or not. */
     public static boolean anyAdvancedOn() {
         AnchorsConfig.Settings settings = AnchorsConfig.settings();

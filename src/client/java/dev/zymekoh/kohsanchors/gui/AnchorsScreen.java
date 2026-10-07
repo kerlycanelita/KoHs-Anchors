@@ -776,6 +776,12 @@ public final class AnchorsScreen extends Screen {
                 () -> settings.instantDetonation, value -> settings.instantDetonation = value, OptionFx.Kind.INSTANT,
                 "AnchorInput.afterKeyClicked ← KeyMappingMixin @ click TAIL", "startUseItem between client ticks",
                 "ServerLock.instantDetonation(): POLICY_INSTANT_DETONATION");
+        openBranch(() -> settings.instantDetonation);
+        offset = serverToggle(offset, "instant_double_anchor", BridgeProtocol.POLICY_INSTANT_DETONATION,
+                () -> settings.instantDoubleAnchor, value -> settings.instantDoubleAnchor = value, OptionFx.Kind.DOUBLE,
+                "AnchorInput.afterKeyClicked → instantDoubleAnchor", "second press after an instant detonation, anchors in hand",
+                "ServerLock.instantDoubleAnchor(): POLICY_INSTANT_DETONATION · double anchors: " + AnchorStats.doubleAnchors());
+        closeBranch();
         offset = section(offset, "kohs_anchors.section.server_optimization");
         offset = serverToggle(offset, "better_enemy_glow", BridgeProtocol.POLICY_OWNERSHIP, () -> settings.betterEnemyGlow,
                 value -> settings.betterEnemyGlow = value, OptionFx.Kind.ENEMY, "BridgeClient OWNER → AnchorTracker.serverOwner",
@@ -2111,8 +2117,8 @@ public final class AnchorsScreen extends Screen {
                         HerziumBridge.droppedPreviews(), AnchorStats.mergedClicks());
             }
             default -> {
-                keys = new String[] {"cycle", "ordered", "held", "merged", "debounced"};
-                values = numbers(0, AnchorStats.orderedBursts(), AnchorStats.heldClicks(), AnchorStats.mergedClicks(),
+                keys = new String[] {"cycle", "double", "held", "merged", "debounced"};
+                values = numbers(0, AnchorStats.doubleAnchors(), AnchorStats.heldClicks(), AnchorStats.mergedClicks(),
                         AnchorStats.debouncedAnchors() + AnchorStats.debouncedGlowstone() + AnchorStats.glowstoneGuarded());
                 long last = AnchorStats.lastCycleMillis();
                 values[0] = last < 0L ? "—" : last + " · " + AnchorStats.bestCycleMillis() + " ms";

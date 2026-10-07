@@ -20,11 +20,13 @@ import net.minecraft.sounds.SoundEvents;
  *   and brackets it.</li>
  *   <li>{@link Kind#LATENCY}, real latency: a ping runs from the anchor to the server and back,
  *   and the round trip appears.</li>
+ *   <li>{@link Kind#DOUBLE}, the instant double anchor: two clicks, the anchor goes off and the next
+ *   one drops into its place at once.</li>
  * </ul>
  * <p>Pure decoration, timed in real time; nothing waits for it.</p>
  */
 final class OptionFx {
-    enum Kind { CHAIN, INSTANT, ENEMY, LATENCY }
+    enum Kind { CHAIN, INSTANT, ENEMY, LATENCY, DOUBLE }
 
     private static final float LENGTH = 1.35F;
 
@@ -59,6 +61,7 @@ final class OptionFx {
             case INSTANT -> instant(graphics, area, centerX, centerY, size, t, out);
             case ENEMY -> enemy(graphics, centerX, centerY, size, t, out, seconds);
             case LATENCY -> latency(graphics, font, area, centerX, centerY, size, t, out, seconds);
+            case DOUBLE -> doubleAnchor(graphics, font, centerX, centerY, size, t, out);
         }
         graphics.disableScissor();
     }
@@ -114,6 +117,35 @@ final class OptionFx {
                 AnchorsUi.ring(graphics, centerX, centerY, Math.round(size * (0.5F + progress * 1.8F)), 2,
                         AnchorsTheme.withAlpha(wave == 0 ? 0xFFF7FF : 0xC084FC, Math.round(230 * (1.0F - progress) * out)));
             }
+        }
+    }
+
+    /** Two clicks: the anchor goes off, and the next one drops into its place with a bounce. */
+    private void doubleAnchor(GuiGraphicsExtractor graphics, Font font, int centerX, int centerY, float size, float t, float out) {
+        float blastAt = 0.1F;
+        if (t < blastAt) {
+            AnchorsUi.miniAnchor(graphics, centerX - 4, centerY - 4, 4.0F, out);
+        } else {
+            if (this.sounds == 0) {
+                play(SoundEvents.GENERIC_EXPLODE.value(), 1.5F, 0.3F);
+                this.sounds = 1;
+            }
+            GlowstoneGuardWarning.drawBlast(graphics, centerX, centerY, Math.max(8, Math.round(size * 0.4F)),
+                    Math.round(size * 2.0F), t - blastAt);
+        }
+        float drop = AnchorsTheme.clamp01((t - 0.16F) / 0.2F);
+        if (drop > 0.0F) {
+            int y = centerY - Math.round((1.0F - AnchorsTheme.easeOutBack(drop)) * size * 1.4F);
+            AnchorsUi.miniAnchor(graphics, centerX - 4, y - 4, 4.0F, out);
+            if (drop >= 1.0F && this.sounds == 1) {
+                play(SoundEvents.RESPAWN_ANCHOR_CHARGE, 0.7F, 0.45F);
+                this.sounds = 2;
+            }
+        }
+        if (t > 0.36F) {
+            float in = AnchorsTheme.clamp01((t - 0.36F) / 0.15F);
+            AnchorsUi.label(graphics, font, "x2", centerX + Math.round(size * 0.55F), centerY - Math.round(size * 0.75F),
+                    AnchorsTheme.withAlpha(0xFFF7FF, Math.round(255 * in * out)), true);
         }
     }
 

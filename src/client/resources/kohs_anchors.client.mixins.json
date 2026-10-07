@@ -16,6 +16,7 @@
     "KeyMappingMixin",
     "LevelRendererGlowMixin",
     "LightEngineAccessor",
+    "LightEngineVeilMixin",
     "MinecraftMixin",
     "MinecraftPickInvoker",
     "MinecraftUseInvoker",

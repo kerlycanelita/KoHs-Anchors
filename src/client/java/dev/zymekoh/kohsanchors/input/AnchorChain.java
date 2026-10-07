@@ -4,6 +4,7 @@ import dev.zymekoh.kohsanchors.config.AnchorsConfig;
 import dev.zymekoh.kohsanchors.glow.AnchorTracker;
 import dev.zymekoh.kohsanchors.predict.AnchorVeil;
 import dev.zymekoh.kohsanchors.predict.DetonationPredictor;
+import dev.zymekoh.kohsanchors.predict.Latency;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
@@ -55,7 +56,18 @@ final class AnchorChain {
      */
     enum Outcome { RUN, RUN_PREDICTED, RUN_DETONATED, CATCH_UP, DROP }
 
+    /** How long a charge counts as on its way: the server's answer, as the veil waits for it. */
+    private static final long CHARGE_WINDOW_NANOS = 400_000_000L;
+    private static final long CHARGE_WINDOW_MAX_NANOS = 1_500_000_000L;
+
     private static BlockPos catchUpTarget;
+    /**
+     * The anchor glowstone was last sent to, and when. Until the server answers, it may already be
+     * charged there although this client still shows it empty: a click with anchors on it is then
+     * the detonation the player meant (a double anchor's first click), not an anchor stacked on top.
+     */
+    private static BlockPos chargeSentTo;
+    private static long chargeSentAt;
 
     private AnchorChain() {
     }
@@ -79,6 +91,7 @@ final class AnchorChain {
             return Outcome.RUN;
         }
 
+        noteCharge(level, target, main, off);
         Vec3 eye = player.getEyePosition();
         BlockPos crossed = AnchorVeil.firstAlong(eye, hit.getLocation(), target);
         if (crossed != null) {
@@ -112,6 +125,13 @@ final class AnchorChain {
         if (drawn == null) {
             BlockState world = level.getBlockState(target);
             if (main.is(Items.RESPAWN_ANCHOR) && world.is(Blocks.RESPAWN_ANCHOR)
+                    && world.getValue(RespawnAnchorBlock.CHARGE) == 0 && chargeInFlight(target)) {
+                // Glowstone is on its way to this anchor: the server detonates it with this click.
+                DetonationPredictor.detonate(level, target);
+                AnchorStats.chainedClick();
+                return Outcome.RUN_DETONATED;
+            }
+            if (main.is(Items.RESPAWN_ANCHOR) && world.is(Blocks.RESPAWN_ANCHOR)
                     && world.getValue(RespawnAnchorBlock.CHARGE) == 0
                     && AnchorTracker.anchors().get(target.asLong()) == AnchorTracker.OWN
                     && AnchorsConfig.settings().noStacking) {
@@ -144,6 +164,11 @@ final class AnchorChain {
             AnchorStats.chainedClick();
             return Outcome.RUN_PREDICTED;
         }
+        if (charge == 0 && main.is(Items.RESPAWN_ANCHOR) && chargeInFlight(target)) {
+            DetonationPredictor.detonate(level, target);
+            AnchorStats.chainedClick();
+            return Outcome.RUN_DETONATED;
+        }
         if (charge == 0) {
             if (main.is(Items.RESPAWN_ANCHOR)) {
                 // A second anchor on the one the previous click placed.
@@ -155,6 +180,25 @@ final class AnchorChain {
         DetonationPredictor.detonate(level, target);
         AnchorStats.chainedClick();
         return Outcome.RUN_DETONATED;
+    }
+
+    /** Remembers glowstone clicked on an anchor that can take a charge. */
+    private static void noteCharge(ClientLevel level, BlockPos target, ItemStack main, ItemStack off) {
+        if (target == null || !(main.is(Items.GLOWSTONE) || off.is(Items.GLOWSTONE))) {
+            return;
+        }
+        BlockState drawn = AnchorVeil.predicted(target);
+        BlockState state = drawn != null ? drawn : level.getBlockState(target);
+        if (state.is(Blocks.RESPAWN_ANCHOR) && state.getValue(RespawnAnchorBlock.CHARGE) < RespawnAnchorBlock.MAX_CHARGES) {
+            chargeSentTo = target.immutable();
+            chargeSentAt = System.nanoTime();
+        }
+    }
+
+    /** Whether glowstone went to the anchor at {@code target} recently enough that the server may not have answered yet. */
+    private static boolean chargeInFlight(BlockPos target) {
+        return target.equals(chargeSentTo) && System.nanoTime() - chargeSentAt
+                < Latency.answerWindowNanos(CHARGE_WINDOW_NANOS, CHARGE_WINDOW_MAX_NANOS);
     }
 
     static BlockPos catchUpTarget() {
