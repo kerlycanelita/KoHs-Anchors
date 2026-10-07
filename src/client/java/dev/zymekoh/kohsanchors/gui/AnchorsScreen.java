@@ -187,6 +187,8 @@ public final class AnchorsScreen extends Screen {
     private ServerCheckWindow serverCheck;
     private EntrySequence entry;
     private boolean entryStarted;
+    /** The charging anchor of the entry plays once per game session; later openings go straight in. */
+    private static boolean entryPlayed;
     private EnemyReveal enemyReveal;
     private OptionFx optionFx;
     /** The bridge's anchor in the Anchors Server tab: green with a bridge, red and locked without. */
@@ -252,9 +254,11 @@ public final class AnchorsScreen extends Screen {
         if (!this.entryStarted) {
             this.entryStarted = true;
             AnchorsConfig.Settings startup = settings();
-            if (startup.interfaceMotion || !startup.entryAccepted) {
+            boolean motion = startup.interfaceMotion && !entryPlayed;
+            entryPlayed = true;
+            if (motion || !startup.entryAccepted) {
                 this.highlightSwitch = !startup.entryAccepted;
-                this.entry = new EntrySequence(startup.interfaceMotion, startup.entryAccepted, this::openLink, () -> {
+                this.entry = new EntrySequence(motion, startup.entryAccepted, this::openLink, () -> {
                     settings().entryAccepted = true;
                     AnchorsConfig.save();
                 });
