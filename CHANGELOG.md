@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.5.1 — 2026-10-08
+## 0.5.2 — 2026-10-08
 
-The anchor skin on 1.21.11, and what a fast fight showed.
+Fixes for 0.5.1.
 
 ### Fixed
 
@@ -16,6 +16,26 @@ The anchor skin on 1.21.11, and what a fast fight showed.
   window, and the option rows counted: with every notch of the wheel her floor and her free space
   changed, and she moved. Rows are never her floor now, and in a list that scrolls the whole list
   area counts as taken, wherever the list is. Everything else she does is unchanged.
+
+### Changed
+
+- **The core's double anchor handling of 0.5.1 is withdrawn.** In real play it made glowstone feel
+  heavy. A second click with anchors in the same tick joins the first again, the two clicks of a
+  double anchor no longer wait for the server together, and a click with anchors on an anchor that
+  glowstone was just sent to is no longer taken for a detonation: the core's clicks are those of
+  0.5.0 again. The server-side **Instant double anchor** option stays.
+
+## 0.5.1 — 2026-10-08
+
+What a fast fight showed. Published for 1.21.11, 26.1.2 and 26.2.
+
+### Core
+
+- **The double anchor** (a double click with anchors on your charged anchor: the first click
+  detonates it, the second puts the next anchor in its place). The second click of the same tick is
+  no longer merged with the first, a pair pressed faster than the server answers waits and goes
+  together, and a click with anchors on an anchor that glowstone was just sent to is a detonation. Withdrawn in
+  0.5.2.
 - **No anchor on top of the one that just exploded.** A click the chain runs as a detonation, on an
   anchor that glowstone the world had not seen yet had charged, made Vanilla's client predict a
   placement on that anchor's face: a ghost anchor, which the next clicks aimed at. Nothing is placed
@@ -31,9 +51,8 @@ The anchor skin on 1.21.11, and what a fast fight showed.
 ### Anchors Server
 
 - **Instant double anchor** (new, under the instant detonation click, off by default): the second
-  click of a double anchor, a double click with anchors on your charged anchor, is sent at the press
-  too, right behind the detonation. Only where the server's bridge allows instant clicks. The
-  statistics count the double anchors it sent.
+  click of a double anchor is sent at the press too, right behind the detonation. Only where the
+  server's bridge allows instant clicks. The statistics count the double anchors.
 
 ## 0.5.0 — 2026-10-06
 
