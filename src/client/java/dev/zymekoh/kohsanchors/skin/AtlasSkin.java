@@ -205,7 +205,7 @@ public final class AtlasSkin {
             return;
         }
         int padding = ((TextureAtlasSpriteAccessor) sprite).kohsAnchors$padding();
-        int[][] levels = Mipmaps.generate(pixels, 0, texture.width, texture.height, mips);
+        int[][] levels = Mipmaps.generate(pixels, 0, texture.width, texture.height, realLevels(mips, texture));
         for (int mip = 0; mip < levels.length; mip++) {
             int width = Math.max(1, texture.width >> mip);
             int height = Math.max(1, texture.height >> mip);
@@ -232,7 +232,7 @@ public final class AtlasSkin {
                 continue;
             }
             Object view = entry.getValue();
-            int mips = AtlasWriter.frameMipLevels(view);
+            int mips = realLevels(AtlasWriter.frameMipLevels(view), texture);
             int[][] levels = Mipmaps.generate(pixels, frame * area, texture.width, texture.height, mips);
             for (int mip = 0; mip < levels.length; mip++) {
                 int width = Math.max(1, texture.width >> mip);
@@ -247,6 +247,15 @@ public final class AtlasSkin {
                 }
             }
         }
+    }
+
+    /**
+     * The levels {@code texture} has pixels for, of the {@code levels} its GPU texture declares.
+     * 1.21.11 gives an animation frame one level more than it fills: for a 16 pixel frame that is
+     * a level of no pixels, and writing into it fails.
+     */
+    private static int realLevels(int levels, AnchorTextures.Texture texture) {
+        return Math.min(levels, 32 - Integer.numberOfLeadingZeros(Math.min(texture.width, texture.height)));
     }
 
     private static TextureAtlas blockAtlas() {

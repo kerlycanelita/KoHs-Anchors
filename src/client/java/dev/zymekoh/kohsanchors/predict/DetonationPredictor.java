@@ -452,7 +452,7 @@ public final class DetonationPredictor {
         return level.getBlockState(BlockPos.containing(center)).is(Blocks.RESPAWN_ANCHOR);
     }
 
-    public static boolean isCharged(BlockState state) {
+    static boolean isCharged(BlockState state) {
         return state.is(Blocks.RESPAWN_ANCHOR) && state.getValue(RespawnAnchorBlock.CHARGE) > 0;
     }
 

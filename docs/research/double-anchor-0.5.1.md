@@ -4,6 +4,12 @@ What a player saw going faster than their usual pace on a real server (miamiprac
 why, what changed, and the lab's measurements. Every change keeps KoHs Anchor's within what a
 Vanilla client sends; the per-version legitimacy lab checks it packet by packet.
 
+> **Released 0.5.1 (2026-10-08).** The three changes to the core's handling of the double anchor
+> described below (the second click of the same tick, the pair that waits together, the click on
+> an anchor with glowstone in flight) were withdrawn before the release, after a report that
+> glowstone felt heavy in real play. The release keeps the ghost anchor fix, the black square fix
+> and the server-side option. The measurements below were taken with those three changes in.
+
 ## What the player saw
 
 - Past their usual speed, an anchor appeared **on top of the one that had just exploded**, or only

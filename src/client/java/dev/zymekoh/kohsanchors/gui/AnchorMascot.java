@@ -1875,7 +1875,8 @@ public final class AnchorMascot {
     private static boolean findFloor(final Screen owner, final int spriteWidth, final int spriteHeight) {
         int floor = -1;
         for (GuiEventListener child : owner.children()) {
-            if (child instanceof AbstractWidget widget && widget.visible) {
+            // An option row scrolls: it is never the floor, or the floor would move with the wheel.
+            if (child instanceof AbstractWidget widget && widget.visible && !(child instanceof AnchorRow)) {
                 int bottom = widget.getY() + widget.getHeight();
                 if (bottom > owner.height * 0.7 && bottom <= owner.height) {
                     floor = Math.max(floor, bottom);
@@ -1886,6 +1887,7 @@ public final class AnchorMascot {
             floor = owner.height - 6;
         }
         int bandTop = floor - spriteHeight;
+        AnchorsLayout.Rect scrolling = owner instanceof AnchorsScreen list ? list.scrollingArea() : null;
         int free = 0;
         FREE[free++] = 6;
         FREE[free++] = owner.width - 6;
@@ -1895,6 +1897,12 @@ public final class AnchorMascot {
             }
             int wy0 = widget.getY();
             int wy1 = wy0 + widget.getHeight();
+            if (scrolling != null && widget instanceof AnchorRow) {
+                // In a list that scrolls, the area the rows move in stands for each of them: the
+                // free floor is the same wherever the list is, so the wheel never moves the mascot.
+                wy0 = scrolling.y();
+                wy1 = scrolling.bottom();
+            }
             if (wy1 <= bandTop || wy0 >= floor) {
                 continue;
             }

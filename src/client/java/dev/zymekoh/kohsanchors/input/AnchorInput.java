@@ -97,8 +97,6 @@ public final class AnchorInput {
     private static final long HOLD_TIMEOUT_NANOS = 700_000_000L;
     private static final long HOLD_TIMEOUT_MAX_NANOS = 1_500_000_000L;
     private static final int[] HELD_SLOTS = new int[HOLD_CAPACITY];
-    /** The two clicks of a double anchor waiting together: the detonation and the next anchor. */
-    private static final boolean[] HELD_DOUBLE = new boolean[HOLD_CAPACITY];
 
     private static boolean hotbarPointReached;
     private static int usesThisPass;
@@ -520,32 +518,11 @@ public final class AnchorInput {
             heldFor = target.immutable();
             heldCleared = false;
         }
-        HELD_DOUBLE[heldCount] = false;
         HELD_SLOTS[heldCount++] = slot;
         AnchorStats.heldClick();
         return Decision.HOLD;
     }
 
-    /**
-     * Whether a second click with anchors, after one with anchors already waiting, is a double
-     * anchor's: the waiting one will detonate the anchor (charged by glowstone waiting before it, or
-     * drawn charged already), and is not itself the second click of a pair.
-     */
-    private static boolean heldDoubleAnchor(Minecraft minecraft) {
-        if (!minecraft.player.getMainHandItem().is(Items.RESPAWN_ANCHOR) || HELD_DOUBLE[heldCount - 1]
-                || !AnchorsConfig.settings().anchorChain) {
-            return false;
-        }
-        Inventory inventory = minecraft.player.getInventory();
-        for (int index = 0; index < heldCount - 1; index++) {
-            if (inventory.getItem(HELD_SLOTS[index]).is(Items.GLOWSTONE)) {
-                return true;
-            }
-        }
-        BlockState drawn = AnchorVeil.predicted(heldFor);
-        BlockState state = drawn != null ? drawn : minecraft.level.getBlockState(heldFor);
-        return DetonationPredictor.isCharged(state);
-    }
 
     /**
      * Whether a held click, released, still does what it was pressed for: an anchor goes down on a
@@ -597,7 +574,6 @@ public final class AnchorInput {
                 inventory.setSelectedSlot(HELD_SLOTS[index]);
             }
             Mc.pick(minecraft);
-            // A double anchor's clicks detonate an anchor and put one in its place: the chain judges them.
             if (!stillMeant(minecraft, inventory.getItem(HELD_SLOTS[index]))) {
                 AnchorStats.droppedClicks(1);
                 continue;
@@ -622,7 +598,6 @@ public final class AnchorInput {
             // The world has their anchor already: they wait only for a tick that has not clicked
             // yet. Or another drawn anchor is on their way: they wait for it.
             System.arraycopy(HELD_SLOTS, index, HELD_SLOTS, 0, count - index);
-            System.arraycopy(HELD_DOUBLE, index, HELD_DOUBLE, 0, count - index);
             heldCount = count - index;
             heldSince = System.nanoTime();
             heldCleared = !waitAgain;
@@ -667,27 +642,6 @@ public final class AnchorInput {
             AnchorStats.retargetedUse();
         }
         return false;
-    }
-
-    /**
-     * The double anchor: a double click with anchors on the player's charged anchor, both clicks in
-     * one tick. The first detonates it; the second is the next anchor, which the server puts where
-     * the old one exploded. Vanilla sends both, so the second is not a double click that could stack:
-     * it goes on to the chain, which draws the new anchor at once. A third click finds that anchor
-     * drawn and is a repeat again.
-     */
-    private static boolean doubleAnchor(Minecraft minecraft) {
-        BlockPos target = targetBlock(minecraft);
-        if (target == null || minecraft.player == null || !AnchorsConfig.settings().anchorChain
-                || !minecraft.player.getMainHandItem().is(Items.RESPAWN_ANCHOR) || !DetonationPredictor.isDetonating(target)) {
-            return false;
-        }
-        BlockState drawn = AnchorVeil.predicted(target);
-        if (drawn == null || drawn.is(Blocks.RESPAWN_ANCHOR)) {
-            return false;
-        }
-        AnchorStats.doubleAnchor();
-        return true;
     }
 
     /**

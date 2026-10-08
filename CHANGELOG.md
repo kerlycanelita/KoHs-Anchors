@@ -1,6 +1,41 @@
 # Changelog
 
-## 0.5.0 — unreleased
+## 0.5.1 — 2026-10-08
+
+The anchor skin on 1.21.11, and what a fast fight showed.
+
+### Fixed
+
+- **1.21.11: "The anchor textures could not be read".** On 1.21.11 the game gives each frame of the
+  charged anchor's animated top a texture with one mip level more than it fills. With 16 pixel
+  textures, the default, that level has no pixels: writing the skin into it failed, and the whole
+  skin switched itself off. The workshop showed that message instead of the anchor, and in the world
+  the anchor kept part of its Vanilla textures, so its top did not match the rest. The skin now
+  writes only the levels a texture has pixels for. 26.1 to 26.3 never had the extra level.
+- **The mascot holds still while the options scroll.** She stood on the lowest control of the
+  window, and the option rows counted: with every notch of the wheel her floor and her free space
+  changed, and she moved. Rows are never her floor now, and in a list that scrolls the whole list
+  area counts as taken, wherever the list is. Everything else she does is unchanged.
+- **No anchor on top of the one that just exploded.** A click the chain runs as a detonation, on an
+  anchor that glowstone the world had not seen yet had charged, made Vanilla's client predict a
+  placement on that anchor's face: a ghost anchor, which the next clicks aimed at. Nothing is placed
+  in the client world for those clicks now; the packet is the same.
+- **No black square under an exploded anchor.** The hidden anchor still blocked the client's light
+  until the server removed it. The client's light engines now read a hidden block as it is drawn.
+
+### Changed
+
+- The menu's entrance, the anchor that charges and explodes, plays once per game session; the next
+  times the menu opens at once.
+
+### Anchors Server
+
+- **Instant double anchor** (new, under the instant detonation click, off by default): the second
+  click of a double anchor, a double click with anchors on your charged anchor, is sent at the press
+  too, right behind the detonation. Only where the server's bridge allows instant clicks. The
+  statistics count the double anchors it sent.
+
+## 0.5.0 — 2026-10-06
 
 The server bridge: the anchor chain only where a server allows it, and what a server can add.
 

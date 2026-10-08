@@ -1104,6 +1104,11 @@ public final class AnchorsScreen extends Screen {
         return tab >= ENEMY_GLOW;
     }
 
+    /** The area the option rows scroll in, or {@code null} while they all fit in it. */
+    AnchorsLayout.Rect scrollingArea() {
+        return this.maxScroll > 0 ? this.layout.options : null;
+    }
+
     /** The tabs the bar shows: the player's, the enemy anchors' three, or none while theirs are off. */
     private static int[] visibleTabs() {
         return enemyPage ? (AnchorsConfig.settings().enemyGlow.enabled ? ENEMY_TABS : NO_TABS) : OWN_TABS;
