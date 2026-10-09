@@ -364,6 +364,21 @@ public final class AnchorsConfig {
         /** The lit pixels themselves shine at full brightness, as if they gave off light. */
         public boolean emissive = true;
 
+        /**
+         * Super glowing: on top of the rest, light that hangs in the air around each anchor, the way
+         * a bright light blooms in a camera. Large see-through light: it can cost frames.
+         */
+        public boolean superGlowing = false;
+
+        public static final int STYLE_LIGHT = 0;
+        public static final int STYLE_ROUND = 1;
+
+        /**
+         * How the glow in the air is drawn. Per light: every lit pixel spreads a soft glow of its
+         * own colour that follows the texture's shapes. Round: one round glow in front of each face.
+         */
+        public int style = STYLE_LIGHT;
+
         /** A slow breathing of the light. */
         public boolean pulse = true;
 

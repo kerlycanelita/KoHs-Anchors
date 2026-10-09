@@ -100,6 +100,10 @@ public final class AnchorStage {
     private static final SubmitNodeCollector.CustomGeometryRenderer SOLID_TILES = (pose, consumer) -> tiles(pose, consumer, true);
     private static final SubmitNodeCollector.CustomGeometryRenderer SOFT_TILES = (pose, consumer) -> tiles(pose, consumer, false);
     private static final SubmitNodeCollector.CustomGeometryRenderer ANCHOR = AnchorStage::anchor;
+    private static final SubmitNodeCollector.CustomGeometryRenderer DARK = AnchorStage::dark;
+    /** How far behind the room its darkness stands, and how dark it is. */
+    private static final float DARK_DISTANCE = 30.0F;
+    private static final int DARK_LEVEL = 34;
 
     private static RenderType solid;
     private static RenderType soft;
@@ -200,6 +204,9 @@ public final class AnchorStage {
             solid = RenderTypes.beaconBeam(OBSIDIAN, false);
             soft = RenderTypes.beaconBeam(OBSIDIAN, true);
         }
+        // The dark the room ends in. The picture has to be solid behind everything: light is added
+        // to what is there, and added to nothing it showed as a veil over the screen.
+        collector.submitCustomGeometry(poses, shown < 0.999F ? soft : solid, DARK);
         collector.submitCustomGeometry(poses, solid, SOLID_TILES);
         collector.submitCustomGeometry(poses, soft, SOFT_TILES);
 
@@ -232,6 +239,43 @@ public final class AnchorStage {
         }
         poses.popPose();
         return true;
+    }
+
+    /** A wall of darkness across the view, far behind the room: obsidian with almost no light on it. */
+    private static void dark(PoseStack.Pose pose, VertexConsumer consumer) {
+        float fx = 0.5F - eyeX;
+        float fy = TARGET_Y - eyeY;
+        float fz = 0.5F - eyeZ;
+        float length = (float) Math.sqrt(fx * fx + fy * fy + fz * fz);
+        fx /= length;
+        fy /= length;
+        fz /= length;
+        // Sideways and up as the camera sees them: forward × up, then that × forward.
+        float rx = -fz;
+        float rz = fx;
+        float flat = (float) Math.sqrt(rx * rx + rz * rz);
+        rx /= flat;
+        rz /= flat;
+        float ux = -rz * fy;
+        float uy = rz * fx - rx * fz;
+        float uz = rx * fy;
+        float cx = eyeX + fx * DARK_DISTANCE;
+        float cy = eyeY + fy * DARK_DISTANCE;
+        float cz = eyeZ + fz * DARK_DISTANCE;
+        float half = DARK_DISTANCE * 1.4F;
+        int alpha = channel(shown);
+        // Counter-clockwise as the camera sees it; one texel of the texture, so it is one flat dark.
+        darkVertex(pose, consumer, cx, cy, cz, rx, rz, ux, uy, uz, -half, half, alpha);
+        darkVertex(pose, consumer, cx, cy, cz, rx, rz, ux, uy, uz, -half, -half, alpha);
+        darkVertex(pose, consumer, cx, cy, cz, rx, rz, ux, uy, uz, half, -half, alpha);
+        darkVertex(pose, consumer, cx, cy, cz, rx, rz, ux, uy, uz, half, half, alpha);
+    }
+
+    private static void darkVertex(PoseStack.Pose pose, VertexConsumer consumer, float cx, float cy, float cz, float rx,
+            float rz, float ux, float uy, float uz, float right, float up, int alpha) {
+        consumer.addVertex(pose, cx + rx * right + ux * up, cy + uy * up, cz + rz * right + uz * up)
+                .setColor(DARK_LEVEL, DARK_LEVEL, DARK_LEVEL, alpha).setUv(0.53F, 0.53F).setLight(FULL_BRIGHT)
+                .setNormal(0.0F, 1.0F, 0.0F);
     }
 
     /**

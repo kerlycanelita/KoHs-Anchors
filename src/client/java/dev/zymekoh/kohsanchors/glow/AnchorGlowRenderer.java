@@ -36,8 +36,10 @@ import org.joml.Vector3f;
  * <ul>
  *   <li><b>Emissive pixels.</b> The anchor's own lit pixels shine at full strength, in their own
  *   colours, even in the dark: the portal, the veins and each charge light.</li>
- *   <li><b>Bloom.</b> Light spreads from those pixels across the face and past its edges, shaped by
- *   the pixels themselves ({@link GlowGeometry}).</li>
+ *   <li><b>Bloom.</b> Light spreads from those pixels across the face, shaped by the pixels
+ *   themselves ({@link GlowGeometry}), and into the air round them as a round glow that faces the
+ *   camera, the way a camera sees a bright light: never a sheet of light level with a face, which
+ *   reads as a lit square.</li>
  *   <li><b>Bounce light.</b> The floor, the walls and the ceiling around the anchor are lit in the
  *   glow's colour. The light spreads through the air as the game's own does, round corners and
  *   down past the block the anchor stands on, fading with the way it travels and brighter on the
@@ -62,15 +64,85 @@ public final class AnchorGlowRenderer {
     private static final float BLOOM_OFFSET = 0.018F;
     private static final float SPILL_OFFSET = 0.005F;
     private static final Direction[] DIRECTIONS = Direction.values();
+    /**
+     * How much of its light each point of a face's light map keeps: nothing at the face's edge, all
+     * of it two cells in. The light on a face never reaches the edge of the face, so it never draws
+     * the face's square; the round glow carries it past the block's outline.
+     */
+    private static final float[] BLOOM_KEEP = new float[GlowGeometry.GRID * GlowGeometry.GRID];
+    /** The most the light on a face adds, where the face is brightest: the texture under it always shows. */
+    private static final float BLOOM_CAP = 0.45F;
+    /** The most the round glows of an anchor add together at their middle: the anchor always shows through. */
+    private static final float GLOW_CAP = 0.5F;
+    /** The most the bounce light adds: a surface never turns into a white plate. */
+    private static final float SPILL_CAP = 0.8F;
+    /** With the aura over it the bounce light is held lower, so the two never add up to a plate of white. */
+    private static final float SPILL_CAP_HALO = 0.5F;
+    /** The most the aura adds, against the anchor's outline. */
+    private static final float HALO_CAP = 0.45F;
+    /** The round glow of a face, per level of detail: how many spokes and rings it is built from. */
+    private static final int[] GLOW_SEGMENTS = {16, 16, 10, 8};
+    private static final int[] GLOW_RINGS = {5, 5, 4, 4};
+    private static final float[][] GLOW_COS = new float[GLOW_SEGMENTS.length][];
+    private static final float[][] GLOW_SIN = new float[GLOW_SEGMENTS.length][];
+    /**
+     * Super glowing: the aura's rings, by how far they stand from the anchor's outline, in blocks,
+     * the light left at each (all of it against the outline, down to nothing with no slope left at
+     * the rim, so no edge shows) and how far towards white the light is there.
+     */
+    private static final float[] HALO_OFFSET = {0.0F, 0.1F, 0.25F, 0.45F, 0.75F, 1.2F, 1.8F, 2.5F};
+    private static final int HALO_RINGS = HALO_OFFSET.length;
+    private static final float[] HALO_LIGHT = new float[HALO_RINGS];
+    private static final float[] HALO_WHITE = new float[HALO_RINGS];
+    /** The steps the aura takes round each corner of the outline. */
+    private static final int HALO_TURN = 4;
+    /** Roughly the vertices the aura of one anchor costs, for the frame budget: six corners at most. */
+    private static final int HALO_VERTICES = 6 * (HALO_RINGS - 1) * (HALO_TURN + 1) * 6;
+    /** The aura's scratch, on the render thread: the block's corners as the camera sees them, and their outline. */
+    private static final float[] CORNER_A = new float[8];
+    private static final float[] CORNER_B = new float[8];
+    private static final int[] OUTLINE = new int[8];
+    private static final float[] TURN_A = new float[HALO_TURN + 1];
+    private static final float[] TURN_B = new float[HALO_TURN + 1];
+
+    static {
+        int last = GlowGeometry.GRID - 1;
+        for (int gy = 0; gy <= last; gy++) {
+            for (int gx = 0; gx <= last; gx++) {
+                int inside = Math.min(Math.min(gx - GlowGeometry.BORDER, last - GlowGeometry.BORDER - gx),
+                        Math.min(gy - GlowGeometry.BORDER, last - GlowGeometry.BORDER - gy));
+                float kept = Math.max(0.0F, Math.min(1.0F, inside / 2.0F));
+                BLOOM_KEEP[gy * GlowGeometry.GRID + gx] = kept * kept * (3.0F - 2.0F * kept);
+            }
+        }
+        for (int detail = 0; detail < GLOW_SEGMENTS.length; detail++) {
+            int segments = GLOW_SEGMENTS[detail];
+            GLOW_COS[detail] = new float[segments + 1];
+            GLOW_SIN[detail] = new float[segments + 1];
+            for (int segment = 0; segment <= segments; segment++) {
+                double angle = segment * Math.PI * 2.0D / segments;
+                GLOW_COS[detail][segment] = (float) Math.cos(angle);
+                GLOW_SIN[detail][segment] = (float) Math.sin(angle);
+            }
+        }
+        float reach = HALO_OFFSET[HALO_RINGS - 1];
+        for (int ring = 0; ring < HALO_RINGS; ring++) {
+            float offset = HALO_OFFSET[ring];
+            // A bright light in a lens: most of it close in, a long faint tail, nothing at the reach.
+            float window = 1.0F - offset * offset / (reach * reach);
+            HALO_LIGHT[ring] = window * window / (1.0F + offset * offset / (0.55F * 0.55F));
+            HALO_WHITE[ring] = 0.4F * HALO_LIGHT[ring] * HALO_LIGHT[ring];
+        }
+    }
 
     /**
-     * Where the glow steps down, in blocks, per quality (performance, balanced, quality): full,
-     * half, a third and a quarter of the bloom's cells.
+     * Where the glow steps down, in blocks, per quality (performance, balanced, quality): the light
+     * on the faces at full, half and a quarter of its cells, then none of it, the round glow alone.
      */
     private static final double[][] LOD_DISTANCE = {{4.0D, 12.0D, 24.0D}, {8.0D, 20.0D, 36.0D}, {16.0D, 32.0D, 48.0D}};
-    private static final int[] LOD_STRIDE = {1, 2, 3, 4};
+    private static final int[] LOD_STRIDE = {1, 2, 4, 8};
     /** Roughly the vertices one anchor costs at each level, for the frame budget. */
-    private static final int[] LOD_VERTICES = {3400, 1100, 420, 240};
+    private static final int[] LOD_VERTICES = {3100, 2200, 560, 360};
     /** Past this many vertices in a frame, the remaining anchors take the lightest glow. */
     private static final int[] VERTEX_BUDGET = {40_000, 90_000, 200_000};
     /** Only the nearest anchors light the blocks around them, and only this close. */
@@ -142,6 +214,7 @@ public final class AnchorGlowRenderer {
         double aspect = minecraft.getWindow().getWidth() / (double) Math.max(1, minecraft.getWindow().getHeight());
         double halfAngle = Math.atan(Math.tan(halfVertical) * Math.sqrt(1.0D + aspect * aspect));
         int quality = glow.quality;
+        boolean sheets = glow.style == AnchorsConfig.Glow.STYLE_LIGHT && glow.bloom > 0;
         double[] lod = LOD_DISTANCE[quality];
         int budget = VERTEX_BUDGET[quality];
         int spillAnchors = SPILL_ANCHORS[quality];
@@ -231,12 +304,21 @@ public final class AnchorGlowRenderer {
                 vertices += spill.quads * 3;
             }
             vertices += LOD_VERTICES[detail];
+            // The light in the air is for the anchors close enough to see it as more than a dot.
+            boolean halo = glow.superGlowing && detail <= 1;
+            if (halo) {
+                vertices += HALO_VERTICES;
+            }
             submittedAnchors++;
             poses.pushPose();
             poses.translate(dx, dy, dz);
+            if (sheets && sheetsReady(charge)) {
+                collector.submitCustomGeometry(poses, GlowSheet.material(), new GlowSheet.Draw(charge, exposed,
+                        GlowSheet.strength(intensity, glow.bloom / 100.0F), override, (float) -dx, (float) -dy, (float) -dz));
+            }
             collector.submitCustomGeometry(poses, GlowMaterial.glow(), new Draw(charge, exposed, intensity, override,
                     glow.emissive, glow.bloom / 100.0F, glow.spill / 100.0F, spillColor, spill, detail,
-                    (float) -dx, (float) -dy, (float) -dz));
+                    (float) -dx, (float) -dy, (float) -dz, halo, !sheets));
             poses.popPose();
         }
     }
@@ -265,10 +347,16 @@ public final class AnchorGlowRenderer {
         int override = enemy ? AnchorsConfig.settings().enemyGlow.color
                 : glow.source == AnchorsConfig.Glow.SOURCE_CUSTOM ? glow.color : 0;
         stageLights(scene);
+        boolean sheets = glow.style == AnchorsConfig.Glow.STYLE_LIGHT && glow.bloom > 0;
+        if (sheets && sheetsReady(charge)) {
+            collector.submitCustomGeometry(poses, GlowSheet.material(), new GlowSheet.Draw(charge,
+                    exposure(scene, BlockPos.ZERO), GlowSheet.strength(intensity, glow.bloom / 100.0F), override, cameraX,
+                    cameraY, cameraZ));
+        }
         collector.submitCustomGeometry(poses, GlowMaterial.glow(), new Draw(charge, exposure(scene, BlockPos.ZERO), intensity,
                 override, glow.emissive, glow.bloom / 100.0F, glow.spill / 100.0F,
                 override != 0 ? override : textureColor(charge), glow.spill > 0 ? stageSpill : null, 0, cameraX, cameraY,
-                cameraZ));
+                cameraZ, glow.superGlowing, !sheets));
     }
 
     /**
@@ -282,7 +370,14 @@ public final class AnchorGlowRenderer {
         }
         stageLights(scene);
         collector.submitCustomGeometry(poses, GlowMaterial.glow(), new Draw(4, 0, strength, 0xFF000000 | color, false, 0.0F,
-                1.0F, 0xFF000000 | color, stageFlash, 0, cameraX, cameraY, cameraZ));
+                1.0F, 0xFF000000 | color, stageFlash, 0, cameraX, cameraY, cameraZ, false, false));
+    }
+
+    /** Bakes what the glow per light needs for an anchor with this charge; whether any of its faces glows. */
+    private static boolean sheetsReady(int charge) {
+        // Not a short-circuit: each face's tile is baked whether or not another glows.
+        return GlowSheet.ready(AnchorVariant.top(charge)) | GlowSheet.ready(AnchorVariant.side(charge))
+                | GlowSheet.ready(AnchorVariant.BOTTOM);
     }
 
     /** The stage's bounce light, built once for its scene: with the anchor in it, and without. */
@@ -387,7 +482,8 @@ public final class AnchorGlowRenderer {
 
     /** One anchor's glow, drawn later in the frame from what was captured now. */
     private record Draw(int charge, int exposed, float intensity, int override, boolean emissive, float bloom,
-            float spill, int spillColor, SpillLight spillLight, int detail, float cameraX, float cameraY, float cameraZ)
+            float spill, int spillColor, SpillLight spillLight, int detail, float cameraX, float cameraY, float cameraZ,
+            boolean halo, boolean round)
             implements SubmitNodeCollector.CustomGeometryRenderer {
         @Override
         public void render(PoseStack.Pose pose, VertexConsumer consumer) {
@@ -407,13 +503,212 @@ public final class AnchorGlowRenderer {
                 if (this.emissive && this.detail <= 1) {
                     emitRuns(matrix, consumer, direction, face);
                 }
-                if (this.bloom > 0.0F) {
-                    emitBloom(matrix, consumer, direction, face);
+                // The glow per light is a sheet of its own (GlowSheet); these two are the round glow.
+                if (this.round && this.bloom > 0.0F) {
+                    if (this.detail <= 2) {
+                        emitBloom(matrix, consumer, direction, face);
+                    }
+                    if (face.light != null) {
+                        emitGlow(matrix, consumer, direction, face.light);
+                    }
                 }
             }
             if (this.spillLight != null && this.spill > 0.0F) {
                 emitSpill(matrix, consumer);
             }
+            if (this.halo) {
+                emitHalo(matrix, consumer);
+            }
+        }
+
+        /**
+         * Super glowing: the light in the air around the anchor, as a bright light blooms in a lens or
+         * shows in a mist. A band of light round the block's outline as the camera sees it: all of
+         * it against the outline, most of it gone half a block out and the rest, with no edge, 2.5
+         * blocks out. It is built from the outline, the hull of the block's eight corners on a plane
+         * that faces the camera, so there is none of it over the block and the block never cuts it
+         * anywhere. It stands in front of the block, as the round glows do; a wall in front still
+         * hides it. Where it would meet a surface in a line it is gone before it gets there: the
+         * ground the anchor stands on, a ceiling a block above it, a block it stands against.
+         */
+        private void emitHalo(Matrix4f matrix, VertexConsumer consumer) {
+            float nx = this.cameraX - 0.5F;
+            float ny = this.cameraY - 0.5F;
+            float nz = this.cameraZ - 0.5F;
+            float distance = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (distance < 1.3F) {
+                // The camera is at the block: the block has no outline to stand round.
+                return;
+            }
+            nx /= distance;
+            ny /= distance;
+            nz /= distance;
+            // Sideways and up as the camera sees them: up × n, then n × that.
+            float rx = nz;
+            float rz = -nx;
+            float flat = (float) Math.sqrt(rx * rx + rz * rz);
+            if (flat < 1.0E-3F) {
+                rx = 1.0F;
+                rz = 0.0F;
+                flat = 1.0F;
+            }
+            rx /= flat;
+            rz /= flat;
+            float ux = ny * rz;
+            float uy = nz * rx - nx * rz;
+            float uz = -ny * rx;
+            float push = Math.min(0.9F, distance * 0.4F);
+            float near = distance - push;
+            float qx = 0.5F + nx * push;
+            float qy = 0.5F + ny * push;
+            float qz = 0.5F + nz * push;
+            // The block's corners on that plane, each where the camera sees it.
+            for (int corner = 0; corner < 8; corner++) {
+                float kx = (corner & 1) - 0.5F;
+                float ky = (corner >> 1 & 1) - 0.5F;
+                float kz = (corner >> 2 & 1) - 0.5F;
+                float scale = near / (distance - (kx * nx + ky * ny + kz * nz));
+                CORNER_A[corner] = (kx * rx + kz * rz) * scale;
+                CORNER_B[corner] = (kx * ux + ky * uy + kz * uz) * scale;
+            }
+            int corners = outline();
+            // A block at the anchor is this long on the plane.
+            float unit = near / distance;
+            int color = this.override != 0 ? this.override : this.spillColor;
+            float strength = Math.min(HALO_CAP, this.intensity * (0.22F + 0.1F * Math.min(3.0F, this.bloom)));
+            for (int index = 0; index < corners; index++) {
+                int before = OUTLINE[(index + corners - 1) % corners];
+                int here = OUTLINE[index];
+                int next = OUTLINE[(index + 1) % corners];
+                float ax = CORNER_A[here];
+                float ay = CORNER_B[here];
+                float bx = CORNER_A[next];
+                float by = CORNER_B[next];
+                float inLength = (float) Math.sqrt((ax - CORNER_A[before]) * (ax - CORNER_A[before])
+                        + (ay - CORNER_B[before]) * (ay - CORNER_B[before]));
+                float outLength = (float) Math.sqrt((bx - ax) * (bx - ax) + (by - ay) * (by - ay));
+                if (inLength < 1.0E-5F || outLength < 1.0E-5F) {
+                    continue;
+                }
+                // Outwards from the side that arrives here and from the side that leaves: the outline
+                // runs counter-clockwise, so outwards is to the right of the way it runs.
+                float lx = (ay - CORNER_B[before]) / inLength;
+                float ly = -(ax - CORNER_A[before]) / inLength;
+                float mx = (by - ay) / outLength;
+                float my = -(bx - ax) / outLength;
+                // Round the corner from one to the other, counter-clockwise.
+                double from = Math.atan2(ly, lx);
+                double turn = Math.atan2(lx * my - ly * mx, lx * mx + ly * my);
+                for (int step = 0; step <= HALO_TURN; step++) {
+                    double angle = from + turn * step / HALO_TURN;
+                    TURN_A[step] = (float) Math.cos(angle);
+                    TURN_B[step] = (float) Math.sin(angle);
+                }
+                for (int ring = 0; ring + 1 < HALO_RINGS; ring++) {
+                    float o0 = HALO_OFFSET[ring] * unit;
+                    float o1 = HALO_OFFSET[ring + 1] * unit;
+                    for (int step = 0; step < HALO_TURN; step++) {
+                        // Counter-clockwise as the camera sees it: out along one spoke, round to the next.
+                        haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + TURN_A[step] * o0,
+                                ay + TURN_B[step] * o0, ring, color, strength);
+                        haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + TURN_A[step] * o1,
+                                ay + TURN_B[step] * o1, ring + 1, color, strength);
+                        haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + TURN_A[step + 1] * o1,
+                                ay + TURN_B[step + 1] * o1, ring + 1, color, strength);
+                        if (ring > 0) {
+                            haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + TURN_A[step] * o0,
+                                    ay + TURN_B[step] * o0, ring, color, strength);
+                            haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + TURN_A[step + 1] * o1,
+                                    ay + TURN_B[step + 1] * o1, ring + 1, color, strength);
+                            haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + TURN_A[step + 1] * o0,
+                                    ay + TURN_B[step + 1] * o0, ring, color, strength);
+                        }
+                    }
+                    // Then along the side that leaves, out from it.
+                    haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + mx * o0, ay + my * o0, ring, color,
+                            strength);
+                    haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + mx * o1, ay + my * o1, ring + 1, color,
+                            strength);
+                    haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, bx + mx * o1, by + my * o1, ring + 1, color,
+                            strength);
+                    haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, ax + mx * o0, ay + my * o0, ring, color,
+                            strength);
+                    haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, bx + mx * o1, by + my * o1, ring + 1, color,
+                            strength);
+                    haloVertex(matrix, consumer, qx, qy, qz, rx, rz, ux, uy, uz, bx + mx * o0, by + my * o0, ring, color,
+                            strength);
+                }
+            }
+        }
+
+        /**
+         * The outline of the block's eight corners as the camera sees them, counter-clockwise, into
+         * {@link #OUTLINE}: from the leftmost corner, each next one is the corner no other is to the
+         * right of. How many corners the outline has: four or six.
+         */
+        private static int outline() {
+            int start = 0;
+            for (int corner = 1; corner < 8; corner++) {
+                if (CORNER_A[corner] < CORNER_A[start]
+                        || CORNER_A[corner] == CORNER_A[start] && CORNER_B[corner] < CORNER_B[start]) {
+                    start = corner;
+                }
+            }
+            int count = 0;
+            int current = start;
+            do {
+                OUTLINE[count++] = current;
+                int next = current + 1 & 7;
+                for (int corner = 0; corner < 8; corner++) {
+                    if (corner == current || corner == next) {
+                        continue;
+                    }
+                    float cross = (CORNER_A[next] - CORNER_A[current]) * (CORNER_B[corner] - CORNER_B[current])
+                            - (CORNER_B[next] - CORNER_B[current]) * (CORNER_A[corner] - CORNER_A[current]);
+                    if (cross < 0.0F) {
+                        next = corner;
+                    }
+                }
+                current = next;
+            } while (current != start && count < 8);
+            return count;
+        }
+
+        /** One point of the aura: {@code a} sideways and {@code b} up on its plane, on the ring {@code ring}. */
+        private void haloVertex(Matrix4f matrix, VertexConsumer consumer, float qx, float qy, float qz, float rx, float rz,
+                float ux, float uy, float uz, float a, float b, int ring, int color, float strength) {
+            float x = qx + rx * a + ux * b;
+            float y = qy + uy * b;
+            float z = qz + rz * a + uz * b;
+            float kept = fade(y / 0.5F) * fade((1.95F - y) / 0.8F);
+            if ((this.exposed & 1 << Direction.UP.ordinal()) == 0) {
+                kept *= fade((1.0F - y) / 0.5F);
+            }
+            if ((this.exposed & 1 << Direction.NORTH.ordinal()) == 0) {
+                kept *= fade(z / 0.5F);
+            }
+            if ((this.exposed & 1 << Direction.SOUTH.ordinal()) == 0) {
+                kept *= fade((1.0F - z) / 0.5F);
+            }
+            if ((this.exposed & 1 << Direction.WEST.ordinal()) == 0) {
+                kept *= fade(x / 0.5F);
+            }
+            if ((this.exposed & 1 << Direction.EAST.ordinal()) == 0) {
+                kept *= fade((1.0F - x) / 0.5F);
+            }
+            float white = HALO_WHITE[ring];
+            int r = Math.round(((color >> 16) & 255) + (255 - ((color >> 16) & 255)) * white);
+            int g = Math.round(((color >> 8) & 255) + (255 - ((color >> 8) & 255)) * white);
+            int b8 = Math.round((color & 255) + (255 - (color & 255)) * white);
+            drawnQuads++;
+            consumer.addVertex(matrix, x, y, z).setColor(r, g, b8,
+                    Math.max(0, Math.min(255, Math.round(HALO_LIGHT[ring] * strength * kept * 255.0F))));
+        }
+
+        /** From nothing at 0 to all of it at 1, with no slope at either end. */
+        private static float fade(float amount) {
+            float kept = Math.max(0.0F, Math.min(1.0F, amount));
+            return kept * kept * (3.0F - 2.0F * kept);
         }
 
         private void emitRuns(Matrix4f matrix, VertexConsumer consumer, Direction direction, GlowGeometry.FaceGlow face) {
@@ -449,6 +744,10 @@ public final class AnchorGlowRenderer {
                     | Math.round(runs[offset + 6] * 255.0F);
         }
 
+        /**
+         * The light on the face itself, from its light map: soft, following what is lit, gone before
+         * the face's edge and never strong enough to cover the texture.
+         */
         private void emitBloom(Matrix4f matrix, VertexConsumer consumer, Direction direction, GlowGeometry.FaceGlow face) {
             float[] map = face.bloom;
             int grid = GlowGeometry.GRID;
@@ -458,46 +757,154 @@ public final class AnchorGlowRenderer {
             float cell = 1.0F / GlowGeometry.CELLS;
             float size = cell * stride;
             float origin = -GlowGeometry.BORDER * cell;
-            float strength = this.intensity * this.bloom * 0.7F;
-            for (int gy = 0; gy + stride < grid; gy += stride) {
-                for (int gx = 0; gx + stride < grid; gx += stride) {
+            // Stronger settings raise it only until its brightest point is at the cap; past that it
+            // keeps its shape, the shape of what is lit. Left to fill up, it lit the whole face
+            // evenly, and a face lit evenly is a lit square.
+            float strength = Math.min(this.intensity * this.bloom * 0.54F, BLOOM_CAP / GlowGeometry.PEAK);
+            int end = grid - 1 - GlowGeometry.BORDER;
+            for (int gy = GlowGeometry.BORDER; gy + stride <= end; gy += stride) {
+                for (int gx = GlowGeometry.BORDER; gx + stride <= end; gx += stride) {
                     int i00 = (gy * grid + gx) * 4;
                     int i10 = (gy * grid + gx + stride) * 4;
                     int i01 = ((gy + stride) * grid + gx) * 4;
                     int i11 = ((gy + stride) * grid + gx + stride) * 4;
-                    float l00 = map[i00 + 3];
-                    float l10 = map[i10 + 3];
-                    float l01 = map[i01 + 3];
-                    float l11 = map[i11 + 3];
+                    float l00 = map[i00 + 3] * BLOOM_KEEP[i00 / 4];
+                    float l10 = map[i10 + 3] * BLOOM_KEEP[i10 / 4];
+                    float l01 = map[i01 + 3] * BLOOM_KEEP[i01 / 4];
+                    float l11 = map[i11 + 3] * BLOOM_KEEP[i11 / 4];
                     if (l00 + l10 + l01 + l11 < 0.02F) {
                         continue;
                     }
                     float u0 = origin + gx * cell;
                     float v0 = origin + gy * cell;
                     int color = this.override != 0 ? this.override : face.bloomColour(stride, gx, gy);
-                    quad(matrix, consumer, direction, u0, v0, u0 + size, v0 + size, BLOOM_OFFSET, color,
-                            fade(direction, v0, l00) * strength, fade(direction, v0, l10) * strength,
-                            fade(direction, v0 + size, l01) * strength, fade(direction, v0 + size, l11) * strength);
+                    quad(matrix, consumer, direction, u0, v0, u0 + size, v0 + size, BLOOM_OFFSET, color, l00 * strength,
+                            l10 * strength, l01 * strength, l11 * strength);
                 }
             }
         }
 
         /**
-         * A vertex's light, faded where a side face's bloom reaches below the anchor's base, so it
-         * meets the ground already dark instead of being cut off by it.
+         * The bloom: the glow in the air round what is lit on a face, as a camera sees a bright
+         * light. A round light that faces the camera whichever way the face turns, centred where the
+         * face's light is, as wide as that light spreads and as strong as there is of it, brightest
+         * and whitest in the middle and gone, with no edge, at its rim. It stands in front of the
+         * block, on the line from the light to the camera, so the block's own faces never cut it;
+         * a wall in front still hides it. Kept between the anchor's base and a block above its top,
+         * so it never meets the ground or a tunnel's ceiling in a line.
          */
-        private static float fade(Direction direction, float v, float light) {
-            float value = Math.min(1.0F, light);
-            if (direction.getAxis().isHorizontal() && v > 1.0F) {
-                float t = Math.max(0.0F, 1.0F - (v - 1.0F) / 0.22F);
-                value *= t * t;
+        private void emitGlow(Matrix4f matrix, VertexConsumer consumer, Direction direction, GlowGeometry.Light source) {
+            float u = source.u();
+            float v = source.v();
+            float px;
+            float py;
+            float pz;
+            switch (direction) {
+                case UP -> { px = u; py = 1.0F; pz = v; }
+                case DOWN -> { px = u; py = 0.0F; pz = 1.0F - v; }
+                case NORTH -> { px = 1.0F - u; py = 1.0F - v; pz = 0.0F; }
+                case SOUTH -> { px = u; py = 1.0F - v; pz = 1.0F; }
+                case WEST -> { px = 0.0F; py = 1.0F - v; pz = u; }
+                default -> { px = 1.0F; py = 1.0F - v; pz = 1.0F - u; }
             }
-            return value;
+            float nx = this.cameraX - px;
+            float ny = this.cameraY - py;
+            float nz = this.cameraZ - pz;
+            float distance = (float) Math.sqrt(nx * nx + ny * ny + nz * nz);
+            if (distance < 0.4F) {
+                return;
+            }
+            nx /= distance;
+            ny /= distance;
+            nz /= distance;
+            // How squarely the face looks at the camera: a face seen from the side shows less light.
+            float cosine = nx * direction.getStepX() + ny * direction.getStepY() + nz * direction.getStepZ();
+            if (cosine <= 0.02F) {
+                return;
+            }
+            // Sideways and up as the camera sees them: up × n, then n × that.
+            float rx = nz;
+            float rz = -nx;
+            float flat = (float) Math.sqrt(rx * rx + rz * rz);
+            if (flat < 1.0E-3F) {
+                rx = 1.0F;
+                rz = 0.0F;
+                flat = 1.0F;
+            }
+            rx /= flat;
+            rz /= flat;
+            float ux = ny * rz;
+            float uy = nz * rx - nx * rz;
+            float uz = -ny * rx;
+            float push = Math.min(0.9F, distance * 0.4F);
+            float cx = px + nx * push;
+            float cy = py + ny * push;
+            float cz = pz + nz * push;
+            float bloomScale = Math.min(3.0F, this.bloom);
+            float radius = (0.4F + 1.05F * source.spread()) * (0.8F + 0.25F * bloomScale);
+            float energy = this.intensity * bloomScale * 0.75F * source.strength();
+            // It grows towards its cap and never gets there: however strong, the middle never turns
+            // into a flat disc with a rim. The faces the camera sees share that one cap, each by how
+            // squarely it looks at the camera: the squares of those cosines add up to one whichever
+            // way the block is seen, so the glows of an anchor never add up to a white ball in front
+            // of it, and a face turning away fades out instead of going out.
+            float light = GLOW_CAP * cosine * cosine * (1.0F - (float) Math.exp(-energy / GLOW_CAP));
+            float core = Math.min(0.45F, 0.12F + 0.08F * energy);
+            int color = this.override != 0 ? this.override : source.colour();
+            int rings = GLOW_RINGS[this.detail];
+            int segments = GLOW_SEGMENTS[this.detail];
+            float[] cos = GLOW_COS[this.detail];
+            float[] sin = GLOW_SIN[this.detail];
+            for (int segment = 0; segment < segments; segment++) {
+                for (int ring = 0; ring + 1 < rings; ring++) {
+                    float t0 = ring / (float) (rings - 1);
+                    float t1 = (ring + 1) / (float) (rings - 1);
+                    // Counter-clockwise as the camera sees it: out along one spoke, round to the next.
+                    glowVertex(matrix, consumer, cx, cy, cz, rx, rz, ux, uy, uz, radius, t0, cos[segment], sin[segment], color,
+                            light, core);
+                    glowVertex(matrix, consumer, cx, cy, cz, rx, rz, ux, uy, uz, radius, t1, cos[segment], sin[segment], color,
+                            light, core);
+                    glowVertex(matrix, consumer, cx, cy, cz, rx, rz, ux, uy, uz, radius, t1, cos[segment + 1],
+                            sin[segment + 1], color, light, core);
+                    if (ring > 0) {
+                        glowVertex(matrix, consumer, cx, cy, cz, rx, rz, ux, uy, uz, radius, t0, cos[segment], sin[segment],
+                                color, light, core);
+                        glowVertex(matrix, consumer, cx, cy, cz, rx, rz, ux, uy, uz, radius, t1, cos[segment + 1],
+                                sin[segment + 1], color, light, core);
+                        glowVertex(matrix, consumer, cx, cy, cz, rx, rz, ux, uy, uz, radius, t0, cos[segment + 1],
+                                sin[segment + 1], color, light, core);
+                    }
+                }
+            }
+        }
+
+        /** One point of a round glow, {@code t} of the way from its middle (0) to its rim (1). */
+        private static void glowVertex(Matrix4f matrix, VertexConsumer consumer, float cx, float cy, float cz, float rx,
+                float rz, float ux, float uy, float uz, float radius, float t, float cos, float sin, int color, float light,
+                float core) {
+            float reach = radius * t;
+            float x = cx + (rx * cos + ux * sin) * reach;
+            float y = cy + uy * sin * reach;
+            float z = cz + (rz * cos + uz * sin) * reach;
+            // No slope in the middle and none at the rim: a bell, with nothing to read as an edge.
+            float bell = (1.0F - t * t) * (1.0F - t * t);
+            float low = Math.max(0.0F, Math.min(1.0F, (y + 0.05F) / 0.35F));
+            float high = Math.max(0.0F, Math.min(1.0F, (2.0F - y) / 0.75F));
+            float kept = low * low * (3.0F - 2.0F * low) * high * high * (3.0F - 2.0F * high);
+            float white = core * (1.0F - t) * (1.0F - t);
+            int r = Math.round(((color >> 16) & 255) + (255 - ((color >> 16) & 255)) * white);
+            int g = Math.round(((color >> 8) & 255) + (255 - ((color >> 8) & 255)) * white);
+            int b = Math.round((color & 255) + (255 - (color & 255)) * white);
+            drawnQuads++;
+            consumer.addVertex(matrix, x, y, z).setColor(r, g, b,
+                    Math.max(0, Math.min(255, Math.round(light * bell * kept * 255.0F))));
         }
 
         private void emitSpill(Matrix4f matrix, VertexConsumer consumer) {
             float[] vertices = this.spillLight.vertices;
-            float strength = this.intensity * this.spill * 0.72F;
+            // Super glowing throws a little more light on what is around, with the light in the air.
+            float strength = this.intensity * this.spill * (this.halo ? 0.9F : 0.72F);
+            float cap = this.halo ? SPILL_CAP_HALO : SPILL_CAP;
             int color = this.spillColor;
             int r = (color >> 16) & 255;
             int g = (color >> 8) & 255;
@@ -510,10 +917,10 @@ public final class AnchorGlowRenderer {
                     continue;
                 }
                 int offset = quad * 16;
-                float w0 = vertices[offset + 3] * strength;
-                float w1 = vertices[offset + 7] * strength;
-                float w2 = vertices[offset + 11] * strength;
-                float w3 = vertices[offset + 15] * strength;
+                float w0 = soft(vertices[offset + 3] * strength, cap);
+                float w1 = soft(vertices[offset + 7] * strength, cap);
+                float w2 = soft(vertices[offset + 11] * strength, cap);
+                float w3 = soft(vertices[offset + 15] * strength, cap);
                 if (w0 + w1 + w2 + w3 < 0.01F) {
                     continue;
                 }
@@ -524,6 +931,20 @@ public final class AnchorGlowRenderer {
                 vertex(matrix, consumer, vertices, offset + 8, r, g, b, w2);
                 vertex(matrix, consumer, vertices, offset + 12, r, g, b, w3);
             }
+        }
+
+        /**
+         * Bounce light held under {@code cap}: itself up to a little over half of it, then bending
+         * towards the cap and never getting there. No flat top, so nothing reads as the edge of a
+         * plate of light.
+         */
+        private static float soft(float light, float cap) {
+            float knee = cap * 0.56F;
+            if (light <= knee) {
+                return light;
+            }
+            float over = (light - knee) / (cap - knee);
+            return knee + (cap - knee) * over / (1.0F + over);
         }
 
         /** Whether the camera is on the side a surround face of this direction, at this plane, turns to. */
@@ -552,12 +973,23 @@ public final class AnchorGlowRenderer {
      */
     private static void quad(Matrix4f matrix, VertexConsumer consumer, Direction direction, float u0, float v0, float u1,
             float v1, float offset, int color, float a00, float a10, float a01, float a11) {
-        corner(matrix, consumer, direction, u0, v0, offset, color, a00);
-        corner(matrix, consumer, direction, u0, v1, offset, color, a01);
-        corner(matrix, consumer, direction, u1, v1, offset, color, a11);
-        corner(matrix, consumer, direction, u0, v0, offset, color, a00);
-        corner(matrix, consumer, direction, u1, v1, offset, color, a11);
-        corner(matrix, consumer, direction, u1, v0, offset, color, a10);
+        // Cut along the diagonal whose two ends are more alike: the light then bends across the
+        // quad the way it really does, instead of showing every quad's diagonal as a crease.
+        if (Math.abs(a00 - a11) <= Math.abs(a10 - a01)) {
+            corner(matrix, consumer, direction, u0, v0, offset, color, a00);
+            corner(matrix, consumer, direction, u0, v1, offset, color, a01);
+            corner(matrix, consumer, direction, u1, v1, offset, color, a11);
+            corner(matrix, consumer, direction, u0, v0, offset, color, a00);
+            corner(matrix, consumer, direction, u1, v1, offset, color, a11);
+            corner(matrix, consumer, direction, u1, v0, offset, color, a10);
+        } else {
+            corner(matrix, consumer, direction, u0, v0, offset, color, a00);
+            corner(matrix, consumer, direction, u0, v1, offset, color, a01);
+            corner(matrix, consumer, direction, u1, v0, offset, color, a10);
+            corner(matrix, consumer, direction, u0, v1, offset, color, a01);
+            corner(matrix, consumer, direction, u1, v1, offset, color, a11);
+            corner(matrix, consumer, direction, u1, v0, offset, color, a10);
+        }
     }
 
     /** One vertex at face coordinates {@code u, v}, pushed {@code offset} out of the face. */
@@ -737,7 +1169,7 @@ public final class AnchorGlowRenderer {
                     for (int part = 0; part < PARTS * PARTS; part++) {
                         faces[quads] = (byte) direction.ordinal();
                         planes[quads] = plane;
-                        addQuad(vertices, quads++, direction, bx, by, bz, part, corners);
+                        addQuad(vertices, quads++, direction, bx, by, bz, fx, fy, fz, part, corners);
                     }
                     if (++found >= MAX_FACES) {
                         break outer;
@@ -930,12 +1362,22 @@ public final class AnchorGlowRenderer {
             return inside(x, y, z) && OPEN[index(x, y, z)];
         }
 
+        /** Whether a block that takes bounce light, and so wears its own sheet of it, is in this cell. */
+        private static boolean lit(int x, int y, int z) {
+            return inside(x, y, z) && RECEIVES[index(x, y, z)];
+        }
+
         /**
          * One of the {@link #PARTS} by {@link #PARTS} pieces of a face, in coordinates of the anchor
-         * block, lit between its four corners.
+         * block, lit between its four corners. {@code f} is the air cell the face looks into.
          */
-        private static void addQuad(float[] vertices, int index, Direction direction, int dx, int dy, int dz, int part,
-                float[] light) {
+        private static void addQuad(float[] vertices, int index, Direction direction, int dx, int dy, int dz, int fx,
+                int fy, int fz, int part, float[] light) {
+            // The face's two axes, the same ones facePoint maps u and v to.
+            int ux = direction.getAxis() == Direction.Axis.X ? 0 : 1;
+            int uz = 1 - ux;
+            int vy = direction.getAxis() == Direction.Axis.Y ? 0 : 1;
+            int vz = 1 - vy;
             float size = 1.0F / PARTS;
             float u0 = (part % PARTS) * size;
             float v0 = (part / PARTS) * size;
@@ -944,7 +1386,22 @@ public final class AnchorGlowRenderer {
             float[][] corners = new float[4][];
             float[] values = new float[4];
             for (int corner = 0; corner < 4; corner++) {
-                corners[corner] = facePoint(direction, us[corner], vs[corner]);
+                // Where a block stands against an edge of the face, that block's own sheet of light
+                // stands this far in front of it: this one stops there, or the two overlap in a line
+                // twice as bright along every inside corner.
+                float u = us[corner];
+                float v = vs[corner];
+                if (u <= 0.0F && lit(fx - ux, fy, fz - uz)) {
+                    u = SPILL_OFFSET;
+                } else if (u >= 1.0F && lit(fx + ux, fy, fz + uz)) {
+                    u = 1.0F - SPILL_OFFSET;
+                }
+                if (v <= 0.0F && lit(fx, fy - vy, fz - vz)) {
+                    v = SPILL_OFFSET;
+                } else if (v >= 1.0F && lit(fx, fy + vy, fz + vz)) {
+                    v = 1.0F - SPILL_OFFSET;
+                }
+                corners[corner] = facePoint(direction, u, v);
                 // Bilinear between the face's corner lights.
                 float top = light[0] + (light[1] - light[0]) * us[corner];
                 float bottom = light[2] + (light[3] - light[2]) * us[corner];

@@ -1,8 +1,8 @@
 # Changelog
 
-## 0.6.0 — 2026-10-08
+## 0.6.0 — 2026-10-09
 
-The anchor's room, and enemy anchors in their own colour.
+The anchor's room, a glow that follows the anchor's own lights, and enemy anchors in their own colour.
 
 ### The preview is a room
 
@@ -23,6 +23,31 @@ The anchor's room, and enemy anchors in their own colour.
   up or down, never out of the room; the wheel comes closer.
 - The enemy's page shows the same room with an enemy's anchor in it: their skin and their glow
   colour, exactly as a fight shows it.
+
+### Glow
+
+- **Glow per light** (new, and the glow's style from now on): every light of the anchor shines where
+  it is, in its own colour. The top, the veins and the charge lights each spread a soft glow that
+  follows their shape, over the block and a little past its edges, the way bloom does under a
+  shader. It is read from the textures in use, Vanilla's, a resource pack's or the skin painted in
+  Anchor custom, and it is laid over the scene instead of added to it, so it keeps its colour in
+  daylight and never burns out to white. The glow there was before is the other style now,
+  **Round**: a soft round light in front of each face. *Glow style*, in the Glow tab, chooses.
+- **Super glowing** (new, off by default): the anchor shines as it would under ray tracing. A soft
+  aura of light hangs in the air round the block's outline, strongest against it and gone, with no
+  edge, two and a half blocks out, and the anchor throws a quarter more light on what is near. Like
+  the rest of the glow it is hidden by walls, and it works in the room of the settings screen as in
+  the world. It is large, see-through light drawn over the screen, so the option warns that it can
+  lower FPS with several charged anchors close by; it is only drawn for the anchors near enough to
+  see it.
+- **No plates of light.** With the power and the bloom turned up, the glow filled up into bright
+  plates with straight borders round the anchor's faces, and a floor near the anchor turned white.
+  No layer of the glow ends in a line or fills up into a plate now: the light on a face keeps the
+  shape of what is lit at any strength, the light thrown on the blocks around bends towards its
+  limit instead of reaching it, and what reaches past a face's edge goes out as the face turns away
+  from the camera.
+- **No bright line along inside corners.** Where a lit floor met a lit wall, their two sheets of
+  light overlapped and drew a thin line twice as bright. Each stops where the other stands.
 
 ### Enemy anchors
 

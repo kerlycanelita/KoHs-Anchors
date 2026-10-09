@@ -537,6 +537,17 @@ public final class AnchorsScreen extends Screen {
                     rebuildWidgets();
                 }, "glow_quality", "AnchorGlowRenderer: view cone, back faces, LOD by distance, vertex budget",
                 "frame: " + AnchorGlowRenderer.frameStats()));
+        offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("glow_style"),
+                description("glow_style"), this.font, () -> Component.translatable(glow.style == AnchorsConfig.Glow.STYLE_ROUND
+                        ? "kohs_anchors.glow_style.round" : "kohs_anchors.glow_style.light").getString(), () -> {
+                    glow.style = glow.style == AnchorsConfig.Glow.STYLE_ROUND ? AnchorsConfig.Glow.STYLE_LIGHT
+                            : AnchorsConfig.Glow.STYLE_ROUND;
+                    rebuildWidgets();
+                }, "glow_style", "GlowSheet: every lit pixel's light baked into a texture, one quad for each face",
+                "round: GlowGeometry's light map and Draw.emitGlow"));
+        offset = toggle(offset, "glow_super", () -> glow.superGlowing, value -> glow.superGlowing = value,
+                "Draw.emitHalo: a band of light round each anchor's outline as the camera sees it, at detail 0 and 1",
+                "about 1,260 vertices, but large and see-through: the cost is fill rate");
         offset = addRow(offset, new AnchorRows.Cycle(x(), y(offset), rowWidth(), label("glow_source"),
                 description("glow_source"), this.font, () -> Component.translatable(glow.source == AnchorsConfig.Glow.SOURCE_CUSTOM
                         ? "kohs_anchors.glow.source.custom" : "kohs_anchors.glow.source.texture").getString(),
@@ -556,8 +567,8 @@ public final class AnchorsScreen extends Screen {
         offset = slider(offset, "glow_power", () -> glow.power, value -> glow.power = value, percent,
                 value -> value + "%", AnchorsConfig::changed, "intensity = power × charge × pulse × distance fade");
         offset = slider(offset, "glow_bloom", () -> glow.bloom, value -> glow.bloom = value, percent,
-                value -> value + "%", AnchorsConfig::changed, "GlowGeometry: light map 8×8 cells, Gaussian σ 1.15",
-                "reaches 2 cells past each edge, faded at the base");
+                value -> value + "%", AnchorsConfig::changed, "GlowGeometry: light map 8×8 cells, Gaussian σ 1.15, kept inside the face",
+                "Draw.emitGlow: a round glow per face, facing the camera, from the face's light centre and spread");
         offset = slider(offset, "glow_spill", () -> glow.spill, value -> glow.spill = value, percent,
                 value -> value + "%", AnchorsConfig::changed, "SpillLight: spread through the air, 26 neighbours, reach 4.6",
                 "faces lit from the air in front, smooth corners × (0.4 + 0.6 cos)", "rebuilt every 1 to 1.4 s or on a block change");
