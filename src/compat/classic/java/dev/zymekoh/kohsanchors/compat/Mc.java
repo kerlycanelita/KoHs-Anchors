@@ -34,4 +34,21 @@ public final class Mc {
     public static int packLight(int block, int sky) {
         return net.minecraft.util.LightCoordsUtil.pack(block, sky);
     }
+
+    private static final net.minecraft.client.renderer.Projection STAGE_PROJECTION = new net.minecraft.client.renderer.Projection();
+    private static net.minecraft.client.renderer.ProjectionMatrixBuffer stageProjectionBuffer;
+
+    /**
+     * Puts what is drawn next in perspective, the projection built as the level's own is (depth
+     * range and direction included). A picture-in-picture pass sets a flat projection for itself
+     * before every draw, so nothing has to be put back.
+     */
+    public static void perspective(float fovDegrees, float width, float height, float near, float far) {
+        if (stageProjectionBuffer == null) {
+            stageProjectionBuffer = new net.minecraft.client.renderer.ProjectionMatrixBuffer("KoHs Anchor's stage");
+        }
+        STAGE_PROJECTION.setupPerspective(near, far, fovDegrees, width, height);
+        com.mojang.blaze3d.systems.RenderSystem.setProjectionMatrix(stageProjectionBuffer.getBuffer(STAGE_PROJECTION),
+                com.mojang.blaze3d.ProjectionType.PERSPECTIVE);
+    }
 }

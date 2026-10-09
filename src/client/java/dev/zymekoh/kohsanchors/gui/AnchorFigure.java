@@ -6,52 +6,39 @@ import dev.zymekoh.kohsanchors.skin.AnchorTextures;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 
 /**
- * A charged anchor drawn as the world draws it, the player's own or an enemy's: the skinned block
- * from {@link AnchorCube}, its lit pixels lit in the glow's colour, the glow around it and the
- * light it throws on the ground. An enemy's anchor looks exactly as it does in a fight: the same
- * block, glowing in the enemy colour.
+ * A charged anchor drawn as the world draws it, the player's own or an enemy's, for the windows
+ * that show one flat: the skinned block from {@link AnchorCube}, its lit pixels lit in the glow's
+ * colour, the glow around it and the light it throws on the ground.
  *
- * <p>{@code enemy} goes from 0 (the player's look) to 1 (the enemy's); in between the colours
- * blend, for the switch between the two pages.</p>
+ * <p>{@code enemy} goes from 0 (the player's look) to 1 (the enemy's). The player's look is always
+ * the player's own skin. The enemy's is their skin while the player gave them one, and otherwise
+ * the player's skin with its lit pixels turned to the enemy's colour, which is what a fight shows
+ * in each case. In between, for the switch between the two pages, the glow's colours blend.</p>
  */
 final class AnchorFigure {
-    private final AnchorCube cube;
+    private final String name;
+    private final AnchorCube own;
+    /** The enemy's skin, made the first time their look is drawn with their skin on. */
+    private AnchorCube theirs;
     private long lastFrame = System.nanoTime();
-    private long lastTouch;
 
     AnchorFigure(String name) {
-        this(name, false);
-    }
-
-    /** An enemy's figure draws their skin, as their anchors are drawn in a fight. */
-    AnchorFigure(String name, boolean enemy) {
-        this.cube = new AnchorCube(name, enemy);
-        this.cube.setCharge(4);
+        this.name = name;
+        this.own = new AnchorCube(name);
+        this.own.setCharge(4);
     }
 
     int charge() {
-        return this.cube.charge();
+        return this.own.charge();
     }
 
     void setCharge(int charge) {
-        this.cube.setCharge(charge);
-    }
-
-    /** Turns it by a drag; it holds still for a moment before turning on its own again. */
-    void drag(double dragX, double dragY) {
-        this.cube.rotate((float) dragX * 0.9F, (float) dragY * 0.9F);
-        this.lastTouch = System.nanoTime();
-    }
-
-    /** One more charge, and back to one after the fourth. */
-    void cycleCharge() {
-        this.cube.setCharge(this.cube.charge() >= 4 ? 1 : this.cube.charge() + 1);
-        this.lastTouch = System.nanoTime();
+        this.own.setCharge(charge);
     }
 
     /** The colour the player's own anchors glow in at this charge. */
     int ownColor() {
-        return AnchorGlowRenderer.ownColor(Math.max(1, this.cube.charge())) & 0xFFFFFF;
+        return AnchorGlowRenderer.ownColor(Math.max(1, this.own.charge())) & 0xFFFFFF;
     }
 
     static int enemyColor() {
@@ -63,6 +50,24 @@ final class AnchorFigure {
         boolean enemyOn = AnchorsConfig.settings().enemyGlow.enabled;
         return AnchorsTheme.lerp(0xFF000000 | ownColor(), 0xFF000000 | (enemyOn ? enemyColor() : ownColor()), enemy)
                 & 0xFFFFFF;
+    }
+
+    /** Whether a look this far towards the enemy's is drawn with the skin the player gave them. */
+    private static boolean wearsEnemySkin(float enemy) {
+        return enemy >= 0.5F && AnchorsConfig.settings().enemySkin.enabled;
+    }
+
+    /** The cube of a look, turned and charged like the player's own. */
+    private AnchorCube cube(float enemy) {
+        if (!wearsEnemySkin(enemy)) {
+            return this.own;
+        }
+        if (this.theirs == null) {
+            this.theirs = new AnchorCube(this.name + "_theirs", true);
+        }
+        this.theirs.setCharge(this.own.charge());
+        this.theirs.setView(this.own.yaw(), this.own.pitch());
+        return this.theirs;
     }
 
     /**
@@ -82,23 +87,24 @@ final class AnchorFigure {
 
     /**
      * The same, its glow pulled towards {@code tint} by {@code tintAmount}: the bridge's anchor turns
-     * green when the server answers, and the enemy's stays red while their glow is off.
+     * green when the server answers, and the enemy's keeps their colour while their glow is off.
      */
     boolean draw(GuiGraphicsExtractor graphics, float centerX, float centerY, float scale, float alpha, float enemy,
             boolean motion, boolean surroundings, boolean turn, int tint, float tintAmount) {
         long now = System.nanoTime();
         float frameMillis = Math.min(50.0F, (now - this.lastFrame) / 1_000_000.0F);
         this.lastFrame = now;
-        if (turn && motion && now - this.lastTouch > 2_500_000_000L) {
-            this.cube.rotate(frameMillis * 0.02F, 0.0F);
+        if (turn && motion) {
+            this.own.rotate(frameMillis * 0.02F, 0.0F);
         }
-        if (!this.cube.prepare(motion) || alpha <= 0.01F) {
+        AnchorCube cube = cube(enemy);
+        if (!cube.prepare(motion) || alpha <= 0.01F) {
             return alpha <= 0.01F;
         }
         AnchorsConfig.Glow glow = AnchorsConfig.settings().glow;
         int color = tintAmount > 0.0F ? AnchorsTheme.lerp(0xFF000000 | color(enemy), 0xFF000000 | tint, tintAmount) & 0xFFFFFF
                 : color(enemy);
-        float charge = this.cube.charge() / 4.0F;
+        float charge = cube.charge() / 4.0F;
         float power = Math.min(1.4F, glow.power / 100.0F * (glow.chargeScaling ? 0.4F + 0.6F * charge : 1.0F));
         boolean glowing = glow.enabled && power > 0.0F;
         int x = Math.round(centerX);
@@ -113,15 +119,20 @@ final class AnchorFigure {
         }
         AnchorsUi.ellipse(graphics, x, y + Math.round(scale * 0.62F), Math.round(scale * 0.5F), Math.max(2, Math.round(scale * 0.09F)),
                 AnchorsTheme.withAlpha(0x0A0412, Math.round(140 * alpha)));
-        this.cube.layout(centerX, centerY, scale);
-        // The lit pixels shine in the glow's colour: faintly for the player's own anchors, whose
-        // pixels keep their colours, fully for an enemy's, which the world recolours.
-        float lift = glowing ? (0.18F + 0.47F * Math.max(enemy, tintAmount)) * Math.min(1.0F, power) : 0.0F;
-        this.cube.draw(graphics, alpha, AnchorTextures.GLOW, 0.0F, lift, color);
+        cube.layout(centerX, centerY, scale);
+        // The lit pixels shine in the glow's colour: faintly where the skin keeps its own colours
+        // (the player's anchors, and an enemy's in their skin), fully where the world recolours the
+        // player's skin for an enemy.
+        float recolour = cube == this.theirs ? 0.0F : Math.max(enemy, tintAmount);
+        float lift = glowing ? (0.18F + 0.47F * recolour) * Math.min(1.0F, power) : 0.0F;
+        cube.draw(graphics, alpha, AnchorTextures.GLOW, 0.0F, lift, color);
         return true;
     }
 
     void close() {
-        this.cube.close();
+        this.own.close();
+        if (this.theirs != null) {
+            this.theirs.close();
+        }
     }
 }

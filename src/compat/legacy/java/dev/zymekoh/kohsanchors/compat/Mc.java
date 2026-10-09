@@ -33,4 +33,21 @@ public final class Mc {
     public static int packLight(int block, int sky) {
         return net.minecraft.client.renderer.LightTexture.pack(block, sky);
     }
+
+    private static net.minecraft.client.renderer.CachedPerspectiveProjectionMatrixBuffer stageProjectionBuffer;
+
+    /**
+     * Puts what is drawn next in perspective, the projection built as the level's own is. A
+     * picture-in-picture pass sets a flat projection for itself before every draw, so nothing has to
+     * be put back. 1.21.11's buffer keeps the first near and far planes it is given.
+     */
+    public static void perspective(float fovDegrees, float width, float height, float near, float far) {
+        if (stageProjectionBuffer == null) {
+            stageProjectionBuffer = new net.minecraft.client.renderer.CachedPerspectiveProjectionMatrixBuffer(
+                    "KoHs Anchor's stage", near, far);
+        }
+        com.mojang.blaze3d.systems.RenderSystem.setProjectionMatrix(
+                stageProjectionBuffer.getBuffer(Math.max(1, Math.round(width)), Math.max(1, Math.round(height)), fovDegrees),
+                com.mojang.blaze3d.ProjectionType.PERSPECTIVE);
+    }
 }

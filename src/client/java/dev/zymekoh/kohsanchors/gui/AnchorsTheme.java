@@ -92,6 +92,24 @@ final class AnchorsTheme {
         return Math.round(alpha * clamp01(factor)) << 24 | (color & 0xFFFFFF);
     }
 
+    private static final float[] TONE_OF = new float[3];
+    private static final float[] TONE_TO = new float[3];
+
+    /**
+     * A colour of the screen's crimson family as the enemy's page shows it: turned to the hue of
+     * the colour the player gave the enemy's anchors, no more saturated than that colour, keeping
+     * its own brightness and alpha. So everything drawn for crimson reads the same in any colour,
+     * and stays crimson for the red the enemy's anchors start with.
+     */
+    static int enemyTone(int crimson) {
+        dev.zymekoh.kohsanchors.skin.ColorMath.toHsv(crimson, TONE_OF);
+        dev.zymekoh.kohsanchors.skin.ColorMath.toHsv(
+                dev.zymekoh.kohsanchors.config.AnchorsConfig.settings().enemyGlow.color, TONE_TO);
+        float saturation = TONE_OF[1] * Math.min(1.0F, TONE_TO[1] / 0.85F);
+        return crimson & 0xFF000000
+                | dev.zymekoh.kohsanchors.skin.ColorMath.fromHsv(TONE_TO[0], saturation, TONE_OF[2]) & 0xFFFFFF;
+    }
+
     static int withAlpha(int color, int alpha) {
         return Math.max(0, Math.min(255, alpha)) << 24 | (color & 0xFFFFFF);
     }

@@ -315,6 +315,39 @@ def check_version(version):
         body = method_body(game_mode_p, name, "(")
         if body is None or not calls(body, r"Method ensureHasSentCarriedItem:\(\)V"):
             problems.append(f"MultiPlayerGameMode.{name} no longer sends the carried slot first")
+
+    # 0.6.0: the settings screen's stage is drawn in place of a falling block (FallingBlockStageMixin),
+    # inside Vanilla's picture of an entity: the picture sets its own projection first, the stage
+    # replaces it, and what was submitted is drawn before anything else changes it.
+    camera = "net.minecraft.client.renderer.state.CameraRenderState" if version.startswith("1.") \
+        else "net.minecraft.client.renderer.state.level.CameraRenderState"
+    falling = disassemble(version, "net.minecraft.client.renderer.entity.FallingBlockRenderer")
+    if ("public void submit(net.minecraft.client.renderer.entity.state.FallingBlockRenderState, "
+            "com.mojang.blaze3d.vertex.PoseStack, net.minecraft.client.renderer.SubmitNodeCollector, "
+            + camera + ");") not in falling:
+        problems.append("FallingBlockRenderer.submit(FallingBlockRenderState, PoseStack, SubmitNodeCollector, "
+                        "CameraRenderState) is missing")
+    picture = disassemble(version, "net.minecraft.client.gui.render.pip.PictureInPictureRenderer")
+    prepare = method_body(picture, "prepare", "(")
+    if prepare is None:
+        problems.append("PictureInPictureRenderer.prepare is missing")
+    else:
+        projected = calls(prepare, r"Method prepareTexturesAndProjection:\(ZII\)V")
+        drawn = calls(prepare, r"Method renderToTexture:")
+        if not projected or not drawn or projected[0] > drawn[0]:
+            problems.append("PictureInPictureRenderer.prepare no longer sets its projection before renderToTexture")
+    setup = method_body(picture, "prepareTexturesAndProjection", "(")
+    if setup is None or not calls(setup, r"RenderSystem\.setProjectionMatrix:"):
+        problems.append("PictureInPictureRenderer no longer sets its projection through RenderSystem.setProjectionMatrix")
+    entity_picture = disassemble(version, "net.minecraft.client.gui.render.pip.GuiEntityRenderer")
+    if not re.search(r"EntityRenderDispatcher\.submit:", entity_picture):
+        problems.append("GuiEntityRenderer no longer submits its entity through the EntityRenderDispatcher")
+    render_types = disassemble(version, "net.minecraft.client.renderer.rendertype.RenderTypes")
+    if "beaconBeam(net.minecraft.resources.Identifier, boolean);" not in render_types:
+        problems.append("RenderTypes.beaconBeam(Identifier, boolean) is missing")
+    collector = disassemble(version, "net.minecraft.client.renderer.SubmitNodeCollector")
+    if "OrderedSubmitNodeCollector order(int);" not in collector:
+        problems.append("SubmitNodeCollector.order(int) is missing")
     return problems
 
 

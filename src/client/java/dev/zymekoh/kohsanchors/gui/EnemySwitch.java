@@ -9,8 +9,8 @@ import net.minecraft.sounds.SoundEvents;
  * The switch between the player's anchors and the enemy's.
  *
  * <p>To the enemy's: the player's anchor lifts out of its column to the middle of the screen, the
- * background turns red, and a crimson line crosses the anchor slowly from top to bottom: above the
- * line it is already the enemy's (their glow colour, as the world draws it), below it still the
+ * background turns to the enemy's colour, and a line of it crosses the anchor slowly from top to
+ * bottom: above the line it is already the enemy's (their skin and glow, as the world draws it), below it still the
  * player's. Then the enemy page opens and the anchor settles into its column. Back to the player's
  * the same runs the other way: the red drains away and the enemy's anchor turns back into the
  * player's under a violet line.</p>
@@ -139,7 +139,7 @@ final class EnemySwitch {
 
         // The stage: the rest of the screen sinks back while the anchor is in the middle.
         float stage = smooth(t / 0.35F) * (1.0F - smooth((t - PAGE) / (END - PAGE)));
-        int crimson = AnchorsTheme.lerp(0xFF7C3AED, 0xFFD11F4A, this.toEnemy ? smooth((t - 0.2F) / 0.8F)
+        int crimson = AnchorsTheme.lerp(0xFF7C3AED, AnchorsTheme.enemyTone(0xFFD11F4A), this.toEnemy ? smooth((t - 0.2F) / 0.8F)
                 : 1.0F - smooth((t - 0.2F) / 0.8F));
         if (stage > 0.01F) {
             graphics.fill(0, 0, width, height, AnchorsTheme.withAlpha(0x06020A, Math.round(150 * stage)));
@@ -163,7 +163,7 @@ final class EnemySwitch {
             // Above the line the new look, below it the old one.
             drawFigure(graphics, x, y, scale, toLook, true, width, height, 0, line);
             drawFigure(graphics, x, y, scale, fromLook, false, width, height, line, height);
-            int lineColor = this.toEnemy ? 0xFF315C : 0xC084FC;
+            int lineColor = this.toEnemy ? AnchorsTheme.enemyTone(0xFF315C) : 0xC084FC;
             int half = Math.round(scale * 1.3F);
             graphics.fillGradient(Math.round(x) - half, line - 10, Math.round(x) + half, line, 0,
                     AnchorsTheme.withAlpha(lineColor, 150));
@@ -179,7 +179,8 @@ final class EnemySwitch {
         float ring = (t - SWAP_END) / 0.4F;
         if (ring > 0.0F && ring < 1.0F) {
             AnchorsUi.ring(graphics, Math.round(x), Math.round(y), Math.round(scale * (0.6F + ring * 1.6F)), 2,
-                    AnchorsTheme.withAlpha(this.toEnemy ? 0xFF315C : 0xC084FC, Math.round(220 * (1.0F - ring))));
+                    AnchorsTheme.withAlpha(this.toEnemy ? AnchorsTheme.enemyTone(0xFF315C) : 0xC084FC,
+                            Math.round(220 * (1.0F - ring))));
         }
     }
 

@@ -16,9 +16,11 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RespawnAnchorBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -89,6 +91,11 @@ public final class AnchorGlowRenderer {
     private static final BlockPos.MutableBlockPos CURSOR = new BlockPos.MutableBlockPos();
     private static final BlockPos.MutableBlockPos NEIGHBOR = new BlockPos.MutableBlockPos();
     private static ClientLevel spillLevel;
+    /** The bounce light of the settings screen's stage, built once for its scene. */
+    private static BlockGetter stageScene;
+    private static SpillLight stageSpill;
+    /** The same room lit from where the anchor stood, once it is gone: a detonation's flash. */
+    private static SpillLight stageFlash;
     private static int textureColorGeneration = Integer.MIN_VALUE;
     /** Anchors submitted in the last frame, and faces and quads drawn: for the developer view. */
     private static int submittedAnchors;
@@ -234,6 +241,60 @@ public final class AnchorGlowRenderer {
         }
     }
 
+    /**
+     * The glow of one anchor outside any world: the settings screen's stage, a scene of its own with
+     * the anchor at its origin. The same three layers from the same settings, at full detail, so
+     * what the stage shows is what the world will. {@code enemy} glows in the enemy colour, as an
+     * enemy's anchor does in a fight; {@code strength} scales it while the anchor comes and goes.
+     *
+     * @param cameraX where the camera is in the anchor block's coordinates, for the faces turned away
+     */
+    public static void submitStage(PoseStack poses, OrderedSubmitNodeCollector collector, BlockGetter scene, int charge,
+            boolean enemy, float strength, float cameraX, float cameraY, float cameraZ) {
+        AnchorsConfig.Glow glow = AnchorsConfig.settings().glow;
+        if (!glow.enabled || glow.power <= 0 || charge <= 0 || strength <= 0.0F) {
+            return;
+        }
+        float intensity = glow.power / 100.0F * strength;
+        if (glow.chargeScaling) {
+            intensity *= 0.4F + 0.6F * charge / 4.0F;
+        }
+        if (glow.pulse) {
+            intensity *= 0.86F + 0.14F * (float) Math.sin(System.nanoTime() / 1_000_000_000.0D * 2.3D);
+        }
+        int override = enemy ? AnchorsConfig.settings().enemyGlow.color
+                : glow.source == AnchorsConfig.Glow.SOURCE_CUSTOM ? glow.color : 0;
+        stageLights(scene);
+        collector.submitCustomGeometry(poses, GlowMaterial.glow(), new Draw(charge, exposure(scene, BlockPos.ZERO), intensity,
+                override, glow.emissive, glow.bloom / 100.0F, glow.spill / 100.0F,
+                override != 0 ? override : textureColor(charge), glow.spill > 0 ? stageSpill : null, 0, cameraX, cameraY,
+                cameraZ));
+    }
+
+    /**
+     * A burst of light on the stage's room, with no anchor in it: the bounce light alone, in
+     * {@code color}, as a detonation throws it for a moment. It reaches where the glow's light does.
+     */
+    public static void submitStageFlash(PoseStack poses, OrderedSubmitNodeCollector collector, BlockGetter scene, int color,
+            float strength, float cameraX, float cameraY, float cameraZ) {
+        if (strength <= 0.0F) {
+            return;
+        }
+        stageLights(scene);
+        collector.submitCustomGeometry(poses, GlowMaterial.glow(), new Draw(4, 0, strength, 0xFF000000 | color, false, 0.0F,
+                1.0F, 0xFF000000 | color, stageFlash, 0, cameraX, cameraY, cameraZ));
+    }
+
+    /** The stage's bounce light, built once for its scene: with the anchor in it, and without. */
+    private static void stageLights(BlockGetter scene) {
+        if (scene != stageScene) {
+            stageScene = scene;
+            long now = System.nanoTime();
+            stageSpill = SpillLight.build(scene, BlockPos.ZERO, now, false);
+            stageFlash = SpillLight.build(scene, BlockPos.ZERO, now, true);
+        }
+    }
+
     /** "anchors, faces, quads" of the last frame, for the developer view. */
     public static String frameStats() {
         return lastSubmitted + " anchors, " + lastFaces + " faces, " + lastQuads + " vertices";
@@ -298,7 +359,7 @@ public final class AnchorGlowRenderer {
     }
 
     /** One bit per direction whose face no full block covers. */
-    private static int exposure(ClientLevel level, BlockPos position) {
+    private static int exposure(BlockGetter level, BlockPos position) {
         int mask = 0;
         for (Direction direction : DIRECTIONS) {
             NEIGHBOR.setWithOffset(position, direction);
@@ -318,7 +379,7 @@ public final class AnchorGlowRenderer {
         long lifetime = 1_000_000_000L + Math.floorMod(key * 0x9E3779B97F4A7C15L, 400L) * 1_000_000L;
         if ((light == null || now - light.builtAt > lifetime) && spillBuildsThisFrame < SPILL_BUILDS_PER_FRAME) {
             spillBuildsThisFrame++;
-            light = SpillLight.build(level, BlockPos.of(key), now);
+            light = SpillLight.build(level, BlockPos.of(key), now, false);
             SPILL.put(key, light);
         }
         return light;
@@ -608,7 +669,11 @@ public final class AnchorGlowRenderer {
             return x >= -RADIUS && x <= RADIUS && y >= -RADIUS && y <= RADIUS && z >= -RADIUS && z <= RADIUS;
         }
 
-        static SpillLight build(ClientLevel level, BlockPos anchor, long now) {
+        /**
+         * @param hollow the light comes from an empty block: the faces that touched the anchor are
+         *     lit as well, as when it has just been blown away
+         */
+        static SpillLight build(BlockGetter level, BlockPos anchor, long now, boolean hollow) {
             BlockPos.MutableBlockPos block = new BlockPos.MutableBlockPos();
             for (int y = -RADIUS; y <= RADIUS; y++) {
                 for (int z = -RADIUS; z <= RADIUS; z++) {
@@ -626,6 +691,11 @@ public final class AnchorGlowRenderer {
             }
             OPEN[CENTER] = false;
             int settled = spread();
+            if (hollow) {
+                OPEN[CENTER] = true;
+                LIGHT[CENTER] = 1.0F;
+                SETTLED[settled++] = CENTER;
+            }
 
             float[] vertices = new float[MAX_QUADS * 16];
             byte[] faces = new byte[MAX_QUADS];

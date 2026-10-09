@@ -124,21 +124,22 @@ final class EnemyIntro {
         int boxHeight = Math.round(box.height() * grow);
         int boxX = box.centerX() - boxWidth / 2;
         int boxY = box.centerY() - boxHeight / 2;
-        // Violet on the player's side, crimson on the enemy's.
+        // Violet on the player's side; on the enemy's, the colour the player gave their anchors.
         AnchorsUi.halo(graphics, boxX, boxY, boxWidth / 2, boxHeight, AnchorsTheme.ACCENT, 5, 0.7F * open);
-        AnchorsUi.halo(graphics, boxX + boxWidth / 2, boxY, boxWidth - boxWidth / 2, boxHeight, AnchorsTheme.CRIMSON_BRIGHT, 5,
-                0.7F * open);
+        AnchorsUi.halo(graphics, boxX + boxWidth / 2, boxY, boxWidth - boxWidth / 2, boxHeight,
+                AnchorsTheme.enemyTone(AnchorsTheme.CRIMSON_BRIGHT), 5, 0.7F * open);
         AnchorsUi.panel(graphics, boxX, boxY, boxWidth, boxHeight, AnchorsTheme.fade(0xF2160B27, open),
-                AnchorsTheme.fade(0xF01A0710, open));
+                AnchorsTheme.fade(AnchorsTheme.enemyTone(0xF01A0710), open));
         graphics.fillGradient(boxX + 1, boxY + 1, boxX + boxWidth - 1, boxY + 3, AnchorsTheme.fade(0xC0A855F7, open),
                 AnchorsTheme.fade(0x00A855F7, open));
-        AnchorsUi.roundedOutline(graphics, boxX, boxY, boxWidth, boxHeight, AnchorsTheme.fade(0xE0B8243F, open));
-        AnchorsUi.bladeCorners(graphics, boxX, boxY, boxWidth, boxHeight, 7, AnchorsTheme.fade(0xE0FFD6DE, open));
+        AnchorsUi.roundedOutline(graphics, boxX, boxY, boxWidth, boxHeight, AnchorsTheme.fade(AnchorsTheme.enemyTone(0xE0B8243F), open));
+        AnchorsUi.bladeCorners(graphics, boxX, boxY, boxWidth, boxHeight, 7, AnchorsTheme.fade(AnchorsTheme.enemyTone(0xE0FFD6DE), open));
         if (open < 0.95F || this.phase != Phase.OPEN) {
             return;
         }
         if (this.motion) {
-            AnchorsUi.comets(graphics, box.x(), box.y(), box.width(), box.height(), seconds, 0xFF9AB0);
+            AnchorsUi.comets(graphics, box.x(), box.y(), box.width(), box.height(), seconds,
+                    AnchorsTheme.enemyTone(0xFF9AB0));
         }
 
         int padding = modal.padding();
@@ -147,10 +148,11 @@ final class EnemyIntro {
         int bottomLimit = modal.cancel().y() - 6;
         String title = Component.translatable("kohs_anchors.enemy.intro.title").getString().toUpperCase(Locale.ROOT);
         float scale = Math.max(1.0F, Math.min(2.0F, innerWidth / (float) Math.max(1, font.width(title))));
-        AnchorsUi.bigText(graphics, font, title, box.centerX() + 1, y + 1, scale, 0xFF5A0514, false);
+        AnchorsUi.bigText(graphics, font, title, box.centerX() + 1, y + 1, scale, AnchorsTheme.enemyTone(0xFF5A0514), false);
         AnchorsUi.bigText(graphics, font, title, box.centerX(), y, scale, AnchorsTheme.TITLE, false);
         y += Math.round(9 * scale) + 3;
-        AnchorsUi.energyLine(graphics, box.x() + padding, box.right() - padding, y, AnchorsTheme.CRIMSON_BRIGHT, seconds, 1.0F);
+        AnchorsUi.energyLine(graphics, box.x() + padding, box.right() - padding, y,
+                AnchorsTheme.enemyTone(AnchorsTheme.CRIMSON_BRIGHT), seconds, 1.0F);
         y += 5;
 
         List<FormattedCharSequence> lines = font.split(Component.translatable("kohs_anchors.enemy.intro.body"),
@@ -164,13 +166,15 @@ final class EnemyIntro {
             int leftX = box.centerX() - Math.round(innerWidth * 0.22F);
             int rightX = box.centerX() + Math.round(innerWidth * 0.22F);
             this.figure.draw(graphics, leftX, stageCenter, anchorScale, 1.0F, 0.0F, this.motion, true);
-            this.figure.draw(graphics, rightX, stageCenter, anchorScale, 1.0F, 1.0F, this.motion, true, false);
+            // Theirs in their colour even while their anchors are still switched off: this is what it will be.
+            this.figure.draw(graphics, rightX, stageCenter, anchorScale, 1.0F, 1.0F, this.motion, true, false,
+                    AnchorFigure.enemyColor(), 1.0F);
             String yours = Component.translatable("kohs_anchors.enemy.intro.yours").getString().toUpperCase(Locale.ROOT);
             String enemy = Component.translatable("kohs_anchors.enemy.intro.enemy").getString().toUpperCase(Locale.ROOT);
             int labelY = stageCenter + Math.round(anchorScale * 0.95F);
             if (labelY + 9 <= y + stage) {
                 AnchorsUi.label(graphics, font, yours, leftX - font.width(yours) / 2, labelY, AnchorsTheme.ACCENT_BRIGHT, true);
-                AnchorsUi.label(graphics, font, enemy, rightX - font.width(enemy) / 2, labelY, 0xFFFF6A86, true);
+                AnchorsUi.label(graphics, font, enemy, rightX - font.width(enemy) / 2, labelY, AnchorsTheme.enemyTone(0xFFFF6A86), true);
             }
             // Crossed blades between them.
             int markX = box.centerX();
@@ -207,9 +211,8 @@ final class EnemyIntro {
                 hide.width() - boxSize - 12);
         AnchorsUi.label(graphics, font, hideText, tickX + boxSize + 4, hide.y() + (hide.height() - 8) / 2, AnchorsTheme.TEXT,
                 true);
-        AnchorsButton.draw(graphics, proceed.x(), proceed.y(), proceed.width(), proceed.height(),
-                Component.translatable("kohs_anchors.enemy.intro.continue").getString(), true, true, this.continueHover, 0.0F,
-                1.0F, -1.0F);
+        AnchorsButton.drawEnemy(graphics, proceed.x(), proceed.y(), proceed.width(), proceed.height(),
+                Component.translatable("kohs_anchors.enemy.intro.continue").getString(), this.continueHover);
         DevInspector.node("EnemyIntro", "first time", box.x(), box.y(), box.width(), box.height(),
                 "Settings.enemyIntro", "AnchorFigure: yours and the enemy's");
     }

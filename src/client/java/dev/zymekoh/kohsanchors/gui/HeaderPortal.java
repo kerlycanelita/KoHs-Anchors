@@ -37,6 +37,9 @@ final class HeaderPortal {
     private int size;
     private long builtFrame = Long.MIN_VALUE;
     private float builtEnemy = -1.0F;
+    /** The enemy's colour the disc was last built for: their side of it takes that hue. */
+    private int builtTone;
+    private final int[] enemyPalette = new int[ENEMY.length];
 
     /**
      * Draws the portal centred on the point, {@code radius} pixels across its disc, with its ring
@@ -51,8 +54,8 @@ final class HeaderPortal {
         long now = System.nanoTime();
         long frame = motion ? now / FRAME_NANOS : 12L;
         double seconds = motion ? now / 1_000_000_000.0D : 0.0D;
-        int accent = AnchorsTheme.lerp(0xFFA855F7, 0xFFFF315C, enemy);
-        int bright = AnchorsTheme.lerp(OWN[4], ENEMY[4], enemy);
+        int accent = AnchorsTheme.lerp(0xFFA855F7, AnchorsTheme.enemyTone(0xFFFF315C), enemy);
+        int bright = AnchorsTheme.lerp(OWN[4], AnchorsTheme.enemyTone(ENEMY[4]), enemy);
 
         // Its light on the header behind it, breathing.
         float breathe = motion ? 0.8F + 0.2F * (float) Math.sin(seconds * 2.4D) : 1.0F;
@@ -104,8 +107,12 @@ final class HeaderPortal {
             Minecraft.getInstance().getTextureManager().register(TEXTURE, this.texture);
             this.builtFrame = Long.MIN_VALUE;
         }
-        if (frame == this.builtFrame && Math.abs(enemy - this.builtEnemy) < 0.004F) {
+        int tone = dev.zymekoh.kohsanchors.config.AnchorsConfig.settings().enemyGlow.color;
+        if (frame == this.builtFrame && Math.abs(enemy - this.builtEnemy) < 0.004F && tone == this.builtTone) {
             return true;
+        }
+        for (int level = 0; level < ENEMY.length; level++) {
+            this.enemyPalette[level] = AnchorsTheme.enemyTone(ENEMY[level]);
         }
         NativeImage pixels = this.texture.getPixels();
         if (pixels == null) {
@@ -136,12 +143,13 @@ final class HeaderPortal {
                     level = (int) Math.floor(light * 5.0D + 0.5D + DITHER[(x & 1) + 2 * (y & 1)]);
                     level = Math.max(1, Math.min(5, level));
                 }
-                pixels.setPixel(x, y, AnchorsTheme.lerp(OWN[level], ENEMY[level], enemy));
+                pixels.setPixel(x, y, AnchorsTheme.lerp(OWN[level], this.enemyPalette[level], enemy));
             }
         }
         this.texture.upload();
         this.builtFrame = frame;
         this.builtEnemy = enemy;
+        this.builtTone = tone;
         return true;
     }
 

@@ -53,6 +53,20 @@ final class AnchorsButton extends AbstractButton {
      */
     static void draw(GuiGraphicsExtractor graphics, int x, int y, int width, int height, String text, boolean primary,
             boolean danger, float hover, float press, float fade, float progress) {
+        draw(graphics, x, y, width, height, text, primary, danger, false, hover, press, fade, progress);
+    }
+
+    /** The button of the enemy's own windows: the danger button's glass in the colour of their anchors. */
+    static void drawEnemy(GuiGraphicsExtractor graphics, int x, int y, int width, int height, String text, float hover) {
+        draw(graphics, x, y, width, height, text, true, true, true, hover, 0.0F, 1.0F, -1.0F);
+    }
+
+    private static int toned(boolean enemy, int crimson) {
+        return enemy ? AnchorsTheme.enemyTone(crimson) : crimson;
+    }
+
+    private static void draw(GuiGraphicsExtractor graphics, int x, int y, int width, int height, String text, boolean primary,
+            boolean danger, boolean enemy, float hover, float press, float fade, float progress) {
         if (fade <= 0.01F || width <= 0 || height <= 0) {
             return;
         }
@@ -65,10 +79,10 @@ final class AnchorsButton extends AbstractButton {
         int border;
         int glow;
         if (danger) {
-            top = AnchorsTheme.lerp(0xE0561024, 0xF08C1636, lift);
-            bottom = AnchorsTheme.lerp(0xE62A0612, 0xF0480A1C, lift);
-            border = AnchorsTheme.lerp(0xE0B8243F, 0xFFFF6A86, hover);
-            glow = AnchorsTheme.CRIMSON_BRIGHT;
+            top = toned(enemy, AnchorsTheme.lerp(0xE0561024, 0xF08C1636, lift));
+            bottom = toned(enemy, AnchorsTheme.lerp(0xE62A0612, 0xF0480A1C, lift));
+            border = toned(enemy, AnchorsTheme.lerp(0xE0B8243F, 0xFFFF6A86, hover));
+            glow = toned(enemy, AnchorsTheme.CRIMSON_BRIGHT);
         } else {
             top = AnchorsTheme.lerp(AnchorsTheme.BUTTON_TOP, AnchorsTheme.BUTTON_HOVER_TOP, lift);
             bottom = AnchorsTheme.lerp(AnchorsTheme.BUTTON_BOTTOM, AnchorsTheme.BUTTON_HOVER_BOTTOM, lift);

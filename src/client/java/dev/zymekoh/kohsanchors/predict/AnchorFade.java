@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.List;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.client.renderer.OrderedSubmitNodeCollector;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.texture.OverlayTexture;
@@ -100,7 +101,45 @@ public final class AnchorFade {
         Object block = style == Style.SINK ? AnchorBlockPreview.worldBlock(level, position, state) : null;
         long now = System.nanoTime();
         FADES.add(new Fade(level, position.immutable(), block, now, enemy, charge, style, light, 0xFF000000 | glow,
-                position.asLong() * 0x9E3779B97F4A7C15L ^ now));
+                position.asLong() * 0x9E3779B97F4A7C15L ^ now, null));
+    }
+
+    /**
+     * The fade of the settings screen's stage: the world's own drawing, for an anchor at the block
+     * of {@code poses} that was detonated at {@code since}. The stage lights its anchor itself, so
+     * the pieces take {@code shade}, the brightness of each face (by direction), instead of the
+     * world's light. Returns false once the fade is over.
+     */
+    public static boolean submitStage(PoseStack poses, OrderedSubmitNodeCollector collector, Style style, boolean enemy,
+            int charge, int glow, long since, long seed, float[] shade) {
+        long now = System.nanoTime();
+        SkinCubeTexture skin = SkinCubeTexture.of(enemy);
+        if (now - since > style.nanos || !skin.prepare()) {
+            return false;
+        }
+        Fade fade = new Fade(null, BlockPos.ZERO, null, since, enemy, charge, style, FULL_BRIGHT, 0xFF000000 | glow, seed,
+                shade);
+        float progress = Math.min(1.0F, (now - since) / (float) style.nanos);
+        float seconds = (now - since) / 1_000_000_000.0F;
+        int frame = skin.frame(charge);
+        if (style == Style.SINK) {
+            poses.pushPose();
+            sinkPose(poses, progress);
+            collector.submitCustomGeometry(poses, skin.unlit(), (pose, consumer) -> {
+                Box box = new Box(skin, charge, frame);
+                box.shade = shade;
+                box.draw(pose, consumer, 0.0F, 0.0F, 0.0F, 1.0F, 1.0F, 1.0F, 0xFFFFFFFF, FULL_BRIGHT, 0.0F);
+            });
+            poses.popPose();
+            return true;
+        }
+        collector.submitCustomGeometry(poses, skin.unlitTranslucent(),
+                (pose, consumer) -> textured(pose, consumer, skin, frame, fade, progress, seconds));
+        if (style == Style.DISINTEGRATE || style == Style.GLITCH) {
+            collector.submitCustomGeometry(poses, RenderTypes.lightning(),
+                    (pose, consumer) -> light(pose, consumer, fade, progress, seconds));
+        }
+        return true;
     }
 
     /** With the frame's block entities, relative to the camera, like the glow. */
@@ -138,6 +177,16 @@ public final class AnchorFade {
 
     /** Slow at first, as if it held on, then gone: what is left of it sinks and turns. */
     private static void sink(PoseStack poses, SubmitNodeCollector collector, Fade fade, float progress) {
+        sinkPose(poses, progress);
+        if (fade.enemy) {
+            EnemySkinRenderer.submitCube(poses, collector, fade.level, fade.position, fade.charge, false);
+        } else {
+            AnchorBlockPreview.submitWorldBlock(poses, collector, fade.block);
+        }
+    }
+
+    /** The sink's shrinking, turning and sinking, about the middle of the block's base. */
+    private static void sinkPose(PoseStack poses, float progress) {
         float scale = 1.0F - progress * progress;
         poses.translate(0.5D, -0.2D * progress, 0.5D);
         // Turned through the pose's own matrices: PoseStack's rotation helpers differ between versions.
@@ -146,17 +195,13 @@ public final class AnchorFade {
         poses.last().normal().rotateY(turn);
         poses.scale(scale, scale, scale);
         poses.translate(-0.5D, 0.0D, -0.5D);
-        if (fade.enemy) {
-            EnemySkinRenderer.submitCube(poses, collector, fade.level, fade.position, fade.charge, false);
-        } else {
-            AnchorBlockPreview.submitWorldBlock(poses, collector, fade.block);
-        }
     }
 
     /** The skinned part of every style but the sink. */
     private static void textured(PoseStack.Pose pose, VertexConsumer consumer, SkinCubeTexture skin, int frame, Fade fade,
             float progress, float seconds) {
         Box box = new Box(skin, fade.charge, frame);
+        box.shade = fade.shade;
         switch (fade.style) {
             case GHOST -> {
                 // Light, not size: it fades and rises, the same block all the way.
@@ -344,6 +389,8 @@ public final class AnchorFade {
         final Quaternionf spin = new Quaternionf();
         private final Vector3f point = new Vector3f();
         private final Vector3f normal = new Vector3f();
+        /** Each face's brightness by direction, where the material takes no light; null in the world. */
+        float[] shade;
 
         Box(SkinCubeTexture skin, int charge, int frame) {
             this.skin = skin;
@@ -367,6 +414,9 @@ public final class AnchorFade {
                     case EAST -> x1 < 1.0F;
                 };
                 int faceColor = inner && direction != Direction.UP ? darker(color) : color;
+                if (this.shade != null) {
+                    faceColor = shaded(faceColor, this.shade[direction.ordinal()]);
+                }
                 for (float[] corner : CORNERS) {
                     float[] unit = SkinCubeTexture.facePoint(direction, corner[0], corner[1]);
                     float x = x0 + unit[0] * (x1 - x0);
@@ -384,6 +434,12 @@ public final class AnchorFade {
             }
         }
 
+        private static int shaded(int color, float shade) {
+            float factor = Math.max(0.0F, Math.min(1.0F, shade));
+            return color & 0xFF000000 | Math.round((color >> 16 & 0xFF) * factor) << 16
+                    | Math.round((color >> 8 & 0xFF) * factor) << 8 | Math.round((color & 0xFF) * factor);
+        }
+
         private static int darker(int color) {
             return color & 0xFF000000 | (color >> 16 & 0xFF) * 45 / 100 << 16 | (color >> 8 & 0xFF) * 45 / 100 << 8
                     | (color & 0xFF) * 45 / 100;
@@ -391,6 +447,6 @@ public final class AnchorFade {
     }
 
     private record Fade(ClientLevel level, BlockPos position, Object block, long since, boolean enemy, int charge, Style style,
-            int light, int glow, long seed) {
+            int light, int glow, long seed, float[] shade) {
     }
 }

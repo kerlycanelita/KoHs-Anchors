@@ -205,9 +205,7 @@ public final class AnchorsScreen extends Screen {
     private EnemyIntro enemyIntro;
     private EnemySwitch enemySwitch;
     /** The enemy's anchor, as the world draws it: on the enemy page and in the switch. */
-    private final AnchorFigure enemyFigure = new AnchorFigure("enemy", true);
-    private boolean figureDragging;
-    private double figureDragDistance;
+    private final AnchorFigure enemyFigure = new AnchorFigure("enemy");
     private DevModeWarning devWarning;
     private SafeAnchorWarning safeWarning;
     private CrystalModal crystalModal;
@@ -591,7 +589,7 @@ public final class AnchorsScreen extends Screen {
                 "enemy_enabled", "EnemyGlow.enabled · off: the page is only this switch (EnemyReveal)",
                 "tracked " + AnchorTracker.count() + " · enemies " + AnchorTracker.enemyCount()));
         offset = note(offset, "enemy_about", () -> Component.translatable("kohs_anchors.enemy.badge").getString()
-                        + " " + AnchorTracker.enemyCount(), AnchorsTheme.CRIMSON_BRIGHT,
+                        + " " + AnchorTracker.enemyCount(), tone(AnchorsTheme.CRIMSON_BRIGHT),
                 "AnchorTracker.ENEMY: a new anchor where no own placement is in flight",
                 "ownPlacement ← MultiPlayerGameModeMixin @ useItemOn RETURN (sequence stamped)",
                 "with a bridge: BridgeClient OWNER → AnchorTracker.serverOwner");
@@ -894,9 +892,9 @@ public final class AnchorsScreen extends Screen {
             this.scroll = 0.0F;
             this.scrollTarget = 0.0F;
             rebuildWidgets();
-            this.enemyReveal = new EnemyReveal(true, motion, this.enemyFigure, () -> from, () -> this.previewArt);
+            this.enemyReveal = new EnemyReveal(true, motion, this.enemyFigure, () -> from, this::anchorSpot);
         } else {
-            AnchorsLayout.Rect from = previewShown() ? this.previewArt : enemyOffStage();
+            AnchorsLayout.Rect from = previewShown() ? anchorSpot() : enemyOffStage();
             settings.enemyGlow.enabled = false;
             AnchorsConfig.changed();
             AnchorsConfig.save();
@@ -1120,6 +1118,22 @@ public final class AnchorsScreen extends Screen {
                 && !enemyOff();
     }
 
+    /** Whether the column shows the anchor's room: every tab with a column but Anchors Server, which has the bridge's. */
+    private boolean stageShown() {
+        return previewShown() && this.tab != SERVER;
+    }
+
+    /**
+     * Where the column's anchor is, for what flies out of it or lands in it: the anchor in its room,
+     * the middle of the column on Anchors Server, nothing without a column.
+     */
+    private AnchorsLayout.Rect anchorSpot() {
+        if (!previewShown()) {
+            return AnchorsLayout.Rect.EMPTY;
+        }
+        return this.tab == SERVER ? this.previewArt : this.anchorPreview.anchorBox(this.previewArt);
+    }
+
     private void selectTab(int index) {
         if (index < 0 || index >= TAB_KEYS.length || isEnemyTab(index) != enemyPage) {
             return;
@@ -1194,11 +1208,11 @@ public final class AnchorsScreen extends Screen {
     }
 
     private void startEnemySwitch(boolean toEnemy) {
-        AnchorsLayout.Rect from = previewShown() ? this.previewArt : AnchorsLayout.Rect.EMPTY;
+        AnchorsLayout.Rect from = anchorSpot();
         this.enemySwitch = new EnemySwitch(toEnemy, settings().interfaceMotion, this.enemyFigure, from, () -> {
             switchPage(toEnemy);
             if (this.enemySwitch != null) {
-                this.enemySwitch.landAt(previewShown() ? this.previewArt : AnchorsLayout.Rect.EMPTY);
+                this.enemySwitch.landAt(anchorSpot());
             }
         });
     }
@@ -1240,7 +1254,15 @@ public final class AnchorsScreen extends Screen {
         return enemyPage || this.tab == SERVER && serverLocked();
     }
 
-    /** How red the background is: 1 on the enemy's page, in between while switching. */
+    /**
+     * A crimson of this screen as the page in view shows it: on the enemy's page, turned to the colour
+     * the player gave the enemy's anchors; on the player's (Anchors Server without a bridge), crimson.
+     */
+    private int tone(int crimson) {
+        return enemyPage ? AnchorsTheme.enemyTone(crimson) : crimson;
+    }
+
+    /** How far the background has turned to the enemy's colour: 1 on their page, in between while switching. */
     private float enemyBlend() {
         return this.enemySwitch != null ? this.enemySwitch.blend() : enemyPage ? 1.0F : 0.0F;
     }
@@ -1273,10 +1295,11 @@ public final class AnchorsScreen extends Screen {
         if (this.minecraft.level == null) {
             this.extractPanorama(graphics, partialTick);
         }
-        // On the enemy's page the veil turns red; during the switch it turns by degrees.
+        // On the enemy's page the veil turns to their colour; during the switch it turns by degrees.
         float red = enemyBlend();
-        graphics.fillGradient(0, 0, this.width, this.height, AnchorsTheme.lerp(AnchorsTheme.VEIL_TOP, 0x86300818, red),
-                AnchorsTheme.lerp(AnchorsTheme.VEIL_BOTTOM, 0xB0180308, red));
+        graphics.fillGradient(0, 0, this.width, this.height,
+                AnchorsTheme.lerp(AnchorsTheme.VEIL_TOP, AnchorsTheme.enemyTone(0x86300818), red),
+                AnchorsTheme.lerp(AnchorsTheme.VEIL_BOTTOM, AnchorsTheme.enemyTone(0xB0180308), red));
         Mc.extractDeferredSubtitles(this.minecraft);
     }
 
@@ -1323,7 +1346,7 @@ public final class AnchorsScreen extends Screen {
             AnchorsLayout.Rect panel = this.layout.panel;
             AnchorsUi.sigil(graphics, panel.centerX(), panel.centerY(),
                     Math.round(Math.min(panel.width(), panel.height()) * 0.62F), seconds,
-                    advanced ? AnchorsTheme.CRIMSON : intense() ? AnchorsTheme.INTENSE_DEEP : AnchorsTheme.ACCENT_DEEP,
+                    advanced ? tone(AnchorsTheme.CRIMSON) : intense() ? AnchorsTheme.INTENSE_DEEP : AnchorsTheme.ACCENT_DEEP,
                     0.55F * intro, this.anchorCharge);
             AnchorsUi.motes(graphics, this.width, this.height, seconds, intro);
         }
@@ -1342,7 +1365,7 @@ public final class AnchorsScreen extends Screen {
             this.battle.render(graphics, this.font, this.layout.body(), pointerX, pointerY, intro);
             if (motion && this.tabChangedAt >= 0L) {
                 AnchorsUi.slash(graphics, this.layout.body(), progress(now - this.tabChangedAt, TAB_SLASH_NANOS),
-                        AnchorsTheme.CRIMSON_BRIGHT);
+                        tone(AnchorsTheme.CRIMSON_BRIGHT));
             }
         } else if (enemyOff()) {
             drawEnemyOff(graphics, pointerX, pointerY, intro, motion, seconds);
@@ -1498,28 +1521,28 @@ public final class AnchorsScreen extends Screen {
         int height = Math.max(1, Math.round(panel.height() * grow));
         int x = panel.x() + (panel.width() - width) / 2;
         int y = panel.y() + (panel.height() - height) / 2;
-        int accent = dev() ? AnchorsTheme.DEV_BLUE : advanced ? AnchorsTheme.CRIMSON : intense() ? AnchorsTheme.INTENSE
+        int accent = dev() ? AnchorsTheme.DEV_BLUE : advanced ? tone(AnchorsTheme.CRIMSON) : intense() ? AnchorsTheme.INTENSE
                 : AnchorsTheme.ACCENT;
         AnchorsUi.halo(graphics, x, y, width, height, accent, 6, 0.6F * intro);
         AnchorsUi.panel(graphics, x, y, width, height,
                 AnchorsTheme.fade(AnchorsTheme.PANEL_TOP, 0.3F + intro * 0.7F),
                 AnchorsTheme.fade(AnchorsTheme.PANEL_BOTTOM, 0.3F + intro * 0.7F));
         AnchorsUi.roundedOutline(graphics, x, y, width, height, AnchorsTheme.fade(
-                advanced ? 0xE0FF315C : intense() ? 0xE0C55BFF : AnchorsTheme.PANEL_BORDER, intro));
+                advanced ? tone(0xE0FF315C) : intense() ? 0xE0C55BFF : AnchorsTheme.PANEL_BORDER, intro));
         DevInspector.node("Panel", "AnchorsScreen", panel.x(), panel.y(), panel.width(), panel.height(),
                 "AnchorsLayout.fit(" + this.width + ", " + this.height + ")", "glass " + Integer.toHexString(AnchorsTheme.PANEL_TOP));
         if (intro < 0.98F) {
             return;
         }
         AnchorsUi.bladeCorners(graphics, panel.x(), panel.y(), panel.width(), panel.height(), 9,
-                advanced ? 0xE0FF6A86 : intense() ? 0xE0F0C8FF : 0xE0E9D5FF);
+                advanced ? tone(0xE0FF6A86) : intense() ? 0xE0F0C8FF : 0xE0E9D5FF);
         if (motion) {
             AnchorsUi.comets(graphics, panel.x(), panel.y(), panel.width(), panel.height(), seconds,
-                    advanced ? 0xFF9AB0 : intense() ? 0xF0C8FF : 0xE8CCFF);
+                    advanced ? tone(0xFF9AB0) : intense() ? 0xF0C8FF : 0xE8CCFF);
         }
         int headerLine = this.layout.header.bottom() - 1;
         AnchorsUi.energyLine(graphics, panel.x() + 8, panel.right() - 8, headerLine,
-                advanced ? AnchorsTheme.CRIMSON_BRIGHT : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT,
+                advanced ? tone(AnchorsTheme.CRIMSON_BRIGHT) : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT,
                 motion ? seconds : 0.0D, 1.0F);
         int footerLine = this.layout.footer.y();
         graphics.fill(panel.x() + 8, footerLine, panel.right() - 8, footerLine + 1, AnchorsTheme.HEADER_LINE);
@@ -1558,7 +1581,7 @@ public final class AnchorsScreen extends Screen {
                 "Component kohs_anchors.screen.title", "scale " + scale + " · glint every 4.5 s");
         if (showSubtitle) {
             AnchorsUi.label(graphics, this.font, subtitleShown(), titleX, titleY + titleHeight + 2,
-                    AnchorsTheme.fade(enemyPage ? 0xFFFF9AB0 : AnchorsTheme.TEXT_MUTED, intro), false);
+                    AnchorsTheme.fade(enemyPage ? tone(0xFFFF9AB0) : AnchorsTheme.TEXT_MUTED, intro), false);
         }
 
         String chip = dev() ? this.versionLabel + " · DEV" : this.versionLabel;
@@ -1618,29 +1641,29 @@ public final class AnchorsScreen extends Screen {
         int top = enemyPage ? AnchorsTheme.lerp(0xC0521028, 0xE0701A38, hover) : AnchorsTheme.lerp(0x803A1560, 0xB0521A80, hover);
         int bottom = enemyPage ? 0xC02A0612 : 0x80200A36;
         if (enemyPage) {
-            AnchorsUi.halo(graphics, x, y, width, height, AnchorsTheme.CRIMSON_BRIGHT, 3, intro * (0.4F + 0.6F * pulse));
+            AnchorsUi.halo(graphics, x, y, width, height, AnchorsTheme.enemyTone(AnchorsTheme.CRIMSON_BRIGHT), 3, intro * (0.4F + 0.6F * pulse));
         }
         float highlight = this.switchHighlightAt < 0L || enemyPage ? 0.0F
                 : 1.0F - AnchorsTheme.clamp01((System.nanoTime() - this.switchHighlightAt) / 7_000_000_000.0F);
         if (highlight > 0.0F) {
             // After the first entry: a beating halo, and an arrow bobbing up at it.
             float beat = AnchorsTheme.pulse(seconds, 0.9D);
-            AnchorsUi.halo(graphics, x, y, width, height, AnchorsTheme.CRIMSON_BRIGHT, 4, intro * highlight * (0.45F + 0.55F * beat));
+            AnchorsUi.halo(graphics, x, y, width, height, AnchorsTheme.enemyTone(AnchorsTheme.CRIMSON_BRIGHT), 4, intro * highlight * (0.45F + 0.55F * beat));
             int arrowX = x + width / 2;
             int arrowY = y + height + 3 + Math.round((1.0F - beat) * 3.0F);
-            int arrow = AnchorsTheme.withAlpha(0xFF6A86, Math.round(255 * highlight * intro));
+            int arrow = AnchorsTheme.withAlpha(AnchorsTheme.enemyTone(0xFF6A86), Math.round(255 * highlight * intro));
             for (int row = 0; row < 4; row++) {
                 graphics.fill(arrowX - row, arrowY + row, arrowX + row + 1, arrowY + row + 1, arrow);
             }
         }
         AnchorsUi.panel(graphics, x, y, width, height, AnchorsTheme.fade(top, intro), AnchorsTheme.fade(bottom, intro));
         AnchorsUi.roundedOutline(graphics, x, y, width, height, AnchorsTheme.fade(enemyPage
-                ? AnchorsTheme.lerp(0xFFB8243F, 0xFFFF6A86, Math.max(hover, pulse))
-                : AnchorsTheme.lerp(0xFF7A2E6A, 0xFFFF6A86, hover), intro));
+                ? AnchorsTheme.lerp(AnchorsTheme.enemyTone(0xFFB8243F), AnchorsTheme.enemyTone(0xFFFF6A86), Math.max(hover, pulse))
+                : AnchorsTheme.lerp(0xFF7A2E6A, AnchorsTheme.enemyTone(0xFFFF6A86), hover), intro));
         // A small crossed-swords mark: two strokes crossing.
         int markX = x + 6;
         int markY = y + 3;
-        int mark = AnchorsTheme.fade(enemyPage ? 0xFFFF6A86 : 0xFFE9A0C0, intro);
+        int mark = AnchorsTheme.fade(enemyPage ? AnchorsTheme.enemyTone(0xFFFF6A86) : 0xFFE9A0C0, intro);
         for (int step = 0; step < 7; step++) {
             graphics.fill(markX + step, markY + step, markX + step + 1, markY + step + 1, mark);
             graphics.fill(markX + 6 - step, markY + step, markX + 7 - step, markY + step + 1, mark);
@@ -1689,16 +1712,16 @@ public final class AnchorsScreen extends Screen {
             float tabIntro = tabAlpha;
             float contentAlpha = tabIntro * AnchorsTheme.clamp01((deal - 0.45F) / 0.55F);
 
-            int accent = danger ? AnchorsTheme.CRIMSON_BRIGHT : intense ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT;
-            int top = selected ? (danger ? 0xE0521028 : intense ? AnchorsTheme.INTENSE_GLASS_TOP : 0xE03A1668)
+            int accent = danger ? tone(AnchorsTheme.CRIMSON_BRIGHT) : intense ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT;
+            int top = selected ? (danger ? tone(0xE0521028) : intense ? AnchorsTheme.INTENSE_GLASS_TOP : 0xE03A1668)
                     : AnchorsTheme.lerp(intense ? 0x8A2A0E52 : 0x801D0D32, intense ? 0xB83C1270 : 0xB02A1248, hover);
-            int bottom = selected ? (danger ? 0xE02A0612 : intense ? AnchorsTheme.INTENSE_GLASS_BOTTOM : 0xE01D0D32)
+            int bottom = selected ? (danger ? tone(0xE02A0612) : intense ? AnchorsTheme.INTENSE_GLASS_BOTTOM : 0xE01D0D32)
                     : AnchorsTheme.lerp(0x7012091F, 0x901D0D32, hover);
             AnchorsUi.panel(graphics, rect.x(), rect.y(), rect.width(), rect.height(), AnchorsTheme.fade(top, tabIntro),
                     AnchorsTheme.fade(bottom, tabIntro));
             int border = selected ? AnchorsTheme.fade(accent, tabIntro)
-                    : AnchorsTheme.fade(AnchorsTheme.lerp(danger ? 0x8A6A1030 : intense ? 0x9A6A1AB0 : AnchorsTheme.CARD_BORDER,
-                            danger ? 0xE0FF6A86 : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.CARD_BORDER_HOVER, hover),
+                    : AnchorsTheme.fade(AnchorsTheme.lerp(danger ? tone(0x8A6A1030) : intense ? 0x9A6A1AB0 : AnchorsTheme.CARD_BORDER,
+                            danger ? tone(0xE0FF6A86) : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.CARD_BORDER_HOVER, hover),
                             tabIntro);
             AnchorsUi.roundedOutline(graphics, rect.x(), rect.y(), rect.width(), rect.height(), border);
             if (selected) {
@@ -1718,13 +1741,13 @@ public final class AnchorsScreen extends Screen {
             int startX = full.x() + (full.width() - contentWidth) / 2;
             int iconY = full.y() + (full.height() - iconSize) / 2;
             int iconColor = AnchorsTheme.fade(selected || hover > 0.5F
-                    ? (danger ? 0xFFFF6A86 : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.ACCENT_BRIGHT)
-                    : (danger ? 0xFFB8243F : intense ? 0xFFC77DFF : AnchorsTheme.SILVER), contentAlpha);
+                    ? (danger ? tone(0xFFFF6A86) : intense ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.ACCENT_BRIGHT)
+                    : (danger ? tone(0xFFB8243F) : intense ? 0xFFC77DFF : AnchorsTheme.SILVER), contentAlpha);
             TabIcons.draw(graphics, index, startX, iconY, iconSize, contentAlpha, hover, selected, seconds, motion);
             if (!iconOnly) {
                 int textColor = selected ? AnchorsTheme.TITLE : AnchorsTheme.lerp(AnchorsTheme.TEXT_MUTED, AnchorsTheme.TEXT, hover);
                 if (danger && !selected) {
-                    textColor = AnchorsTheme.lerp(0xFFE08A9E, 0xFFFFD6DE, hover);
+                    textColor = AnchorsTheme.lerp(tone(0xFFE08A9E), tone(0xFFFFD6DE), hover);
                 } else if (intense && !selected) {
                     textColor = AnchorsTheme.lerp(0xFFD9A6FF, 0xFFF6E6FF, hover);
                 }
@@ -1799,14 +1822,14 @@ public final class AnchorsScreen extends Screen {
             if (y + SECTION_HEIGHT < viewport.y() || y > viewport.bottom()) {
                 continue;
             }
-            int sectionColor = advanced ? 0xFFFF9AB0 : intense() ? 0xFFE7B5FF : AnchorsTheme.SECTION;
-            AnchorsUi.diamond(graphics, viewport.x() + 3, y + 4, 2, advanced ? AnchorsTheme.CRIMSON_BRIGHT
+            int sectionColor = advanced ? tone(0xFFFF9AB0) : intense() ? 0xFFE7B5FF : AnchorsTheme.SECTION;
+            AnchorsUi.diamond(graphics, viewport.x() + 3, y + 4, 2, advanced ? tone(AnchorsTheme.CRIMSON_BRIGHT)
                     : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT);
             AnchorsUi.label(graphics, this.font, section.title(), viewport.x() + 9, y, sectionColor, false);
             int lineX = viewport.x() + 15 + this.font.width(section.title());
             if (lineX < lineRight) {
                 AnchorsUi.energyLine(graphics, lineX, lineRight, y + 4,
-                        advanced ? AnchorsTheme.CRIMSON_BRIGHT : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT,
+                        advanced ? tone(AnchorsTheme.CRIMSON_BRIGHT) : intense() ? AnchorsTheme.INTENSE : AnchorsTheme.ACCENT,
                         motion ? seconds : 0.0D, 0.8F);
             }
             DevInspector.node("Section", section.title(), viewport.x(), y, this.layout.rowWidth(), SECTION_HEIGHT - 2,
@@ -1817,7 +1840,7 @@ public final class AnchorsScreen extends Screen {
             this.branchJoints = new int[count + 16];
         }
         Arrays.fill(this.branchJoints, 0, count, Integer.MIN_VALUE);
-        int branchColor = advanced ? AnchorsTheme.CRIMSON_BRIGHT : intense() ? AnchorsTheme.INTENSE_BRIGHT
+        int branchColor = advanced ? tone(AnchorsTheme.CRIMSON_BRIGHT) : intense() ? AnchorsTheme.INTENSE_BRIGHT
                 : AnchorsTheme.ACCENT_BRIGHT;
         for (int index = 0; index < count; index++) {
             AnchorRow row = this.rows.get(index);
@@ -1865,7 +1888,7 @@ public final class AnchorsScreen extends Screen {
         // A blade crosses the options when the tab changes.
         if (motion && this.tabChangedAt >= 0L) {
             float slash = progress(now - this.tabChangedAt, TAB_SLASH_NANOS);
-            AnchorsUi.slash(graphics, viewport, slash, advanced ? AnchorsTheme.CRIMSON_BRIGHT
+            AnchorsUi.slash(graphics, viewport, slash, advanced ? tone(AnchorsTheme.CRIMSON_BRIGHT)
                     : intense() ? AnchorsTheme.INTENSE_BRIGHT : AnchorsTheme.ACCENT_BRIGHT);
         }
 
@@ -1875,7 +1898,7 @@ public final class AnchorsScreen extends Screen {
             int thumbHeight = Math.max(12, viewport.height() * viewport.height() / Math.max(1, this.contentHeight));
             int thumbY = viewport.y() + Math.round((viewport.height() - thumbHeight) * (this.scroll / this.maxScroll));
             graphics.fill(trackX, thumbY, trackX + 2, thumbY + thumbHeight,
-                    advanced ? 0xE6FF6A86 : intense() ? 0xE6D27BFF : AnchorsTheme.SCROLL_THUMB);
+                    advanced ? tone(0xE6FF6A86) : intense() ? 0xE6D27BFF : AnchorsTheme.SCROLL_THUMB);
             if (this.scroll > 0.5F) {
                 graphics.fillGradient(viewport.x(), viewport.y(), trackX - 1, viewport.y() + 8, 0x800B0514, 0x000B0514);
             }
@@ -1917,68 +1940,18 @@ public final class AnchorsScreen extends Screen {
         boolean hovered = this.previewArt.contains(mouseX, mouseY);
         AnchorsUi.roundedOutline(graphics, preview.x(), preview.y(), preview.width(), preview.height(),
                 AnchorsTheme.fade(hovered ? AnchorsTheme.CARD_BORDER_HOVER
-                        : advanced ? 0x8A6A1030 : AnchorsTheme.CARD_BORDER, intro));
+                        : advanced ? tone(0x8A6A1030) : AnchorsTheme.CARD_BORDER, intro));
         AnchorsUi.bladeCorners(graphics, preview.x(), preview.y(), preview.width(), preview.height(), 6,
-                AnchorsTheme.fade(advanced ? 0xC0FF6A86 : 0xC0C084FC, intro));
+                AnchorsTheme.fade(advanced ? tone(0xC0FF6A86) : 0xC0C084FC, intro));
 
-        // The ritual circle behind the anchor lights a node for every charge the anchor holds.
-        boolean enemyView = enemyPage;
-        int radius = Math.round(Math.min(this.previewArt.width(), this.previewArt.height()) * 0.46F);
-        if (radius > 16) {
-            AnchorsUi.sigil(graphics, this.previewArt.centerX(), this.previewArt.centerY() + radius / 6, radius,
-                    motion ? seconds * 1.6D : 0.0D, advanced || enemyView ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT,
-                    0.8F * intro, enemyView ? this.enemyFigure.charge() : this.anchorPreview.charge());
-        }
-        if (this.enemySwitch != null || this.enemyReveal != null) {
-            // The anchor is on its way: the switch or the reveal draws it.
-        } else if (enemyView) {
-            // The enemy's anchor exactly as a fight shows it: the same block, lit in their colour.
-            float scale = Math.min(this.previewArt.width(), this.previewArt.height()) / 2.4F;
-            this.enemyFigure.draw(graphics, this.previewArt.centerX(), this.previewArt.y() + this.previewArt.height() / 2.0F,
-                    scale, intro, 1.0F, motion, true);
-            if (this.previewArt.contains(mouseX, mouseY)) {
-                List<FormattedCharSequence> hint = this.font.split(Component.translatable("kohs_anchors.enemy.preview.hint"),
-                        Math.max(40, this.previewArt.width() - 6));
-                int lineY = this.previewArt.bottom() - 10 * Math.min(2, hint.size());
-                for (int index = 0; index < Math.min(2, hint.size()); index++) {
-                    FormattedCharSequence line = hint.get(index);
-                    AnchorsUi.line(graphics, this.font, line, this.previewArt.centerX() - this.font.width(line) / 2,
-                            lineY + index * 10, AnchorsTheme.fade(AnchorsTheme.TEXT_DIM, intro));
-                }
-            }
-            DevInspector.node("AnchorFigure", "enemy anchor", this.previewArt.x(), this.previewArt.y(), this.previewArt.width(),
-                    this.previewArt.height(), "AnchorCube(\"enemy\"): glow layer lit in EnemyGlow.color",
-                    "EnemyGlow.color = " + ColorMath.hex(settings().enemyGlow.color), "drag: turn · click: charge");
-        } else if (this.tab == GLOW) {
-            // The glow as it will look: its colour and strength around the anchor, and on the ground.
-            AnchorsConfig.Glow glow = settings().glow;
-            int color = AnchorGlowRenderer.ownColor(Math.max(1, Math.round(this.anchorPreview.charge())));
-            boolean on = glow.enabled;
-            if (on) {
-                float charge = this.anchorPreview.charge() / 4.0F;
-                float power = glow.power / 100.0F * (glow.chargeScaling ? 0.4F + 0.6F * charge : 1.0F);
-                float breathe = glow.pulse && motion ? 0.86F + 0.14F * (float) Math.sin(seconds * 2.3D) : 1.0F;
-                int size = Math.min(this.previewArt.width(), this.previewArt.height());
-                AnchorsUi.glowEllipse(graphics, this.previewArt.centerX(), this.previewArt.y() + this.previewArt.height() / 2,
-                        Math.round(size * (0.35F + 0.15F * glow.bloom / 100.0F)), Math.round(size * (0.33F + 0.15F * glow.bloom / 100.0F)),
-                        color & 0xFFFFFF, Math.min(1.0F, power * breathe));
-                AnchorsUi.glowEllipse(graphics, this.previewArt.centerX(),
-                        this.previewArt.y() + this.previewArt.height() / 2 + Math.round(size * 0.34F),
-                        Math.round(size * 0.45F * (0.5F + glow.spill / 200.0F)), Math.max(3, Math.round(size * 0.09F)),
-                        color & 0xFFFFFF, Math.min(1.0F, power * glow.spill / 100.0F * breathe));
-            }
-        }
-        if (this.enemySwitch == null && !enemyView) {
-            this.anchorPreview.lightOverride(0);
-            this.anchorPreview.render(graphics, this.font, this.previewArt, mouseX, mouseY, motion, intro, this.previewHint);
-            DevInspector.node("AnchorPreview", "3D anchor", this.previewArt.x(), this.previewArt.y(), this.previewArt.width(),
-                    this.previewArt.height(), "FallingBlockRenderState → GuiGraphics.entity", "block atlas: the skin shows here",
-                    "FullBrightLightEngine");
-        }
+        // The anchor's room: the player's anchor or, on the enemy's page, theirs, each as a fight
+        // shows it. While the anchor is on its way between the two pages the room waits empty.
+        this.anchorPreview.render(graphics, this.font, this.previewArt, mouseX, mouseY, motion, intro, this.previewHint,
+                enemyPage, this.enemySwitch == null && this.enemyReveal == null);
 
         int statsTop = preview.bottom() - STATS_HEIGHT - 8;
         AnchorsUi.energyLine(graphics, preview.x() + 8, preview.right() - 8, statsTop - 1,
-                advanced ? AnchorsTheme.CRIMSON_BRIGHT : AnchorsTheme.ACCENT, motion ? seconds : 0.0D, intro);
+                advanced ? tone(AnchorsTheme.CRIMSON_BRIGHT) : AnchorsTheme.ACCENT, motion ? seconds : 0.0D, intro);
         drawStats(graphics, preview.x() + 8, statsTop + 4, preview.width() - 16, intro, true);
     }
 
@@ -2011,7 +1984,7 @@ public final class AnchorsScreen extends Screen {
                     ok ? AnchorFx.GREEN : 0xFF315C, ok || locked ? 1.0F : 0.0F);
             if (locked) {
                 int size = Math.max(10, Math.round(scale * 0.95F));
-                AnchorsUi.glowEllipse(graphics, art.centerX(), centerY, Math.round(size * 1.1F), Math.round(size * 0.9F), 0xFF315C,
+                AnchorsUi.glowEllipse(graphics, art.centerX(), centerY, Math.round(size * 1.1F), Math.round(size * 0.9F), tone(0xFF315C),
                         0.3F * intro);
                 AnchorFx.padlock(graphics, art.centerX(), centerY - Math.round(size * 0.2F), size, intro);
             }
@@ -2041,12 +2014,12 @@ public final class AnchorsScreen extends Screen {
         this.enemyOffHover += ((pill.contains(mouseX, mouseY) ? 1.0F : 0.0F) - this.enemyOffHover) * 0.25F;
         float hover = this.enemyOffHover;
         float pulse = motion ? AnchorsTheme.pulse(seconds, 1.6D) : 0.5F;
-        AnchorsUi.halo(graphics, pill.x(), pill.y(), pill.width(), pill.height(), AnchorsTheme.CRIMSON_BRIGHT, 4,
+        AnchorsUi.halo(graphics, pill.x(), pill.y(), pill.width(), pill.height(), tone(AnchorsTheme.CRIMSON_BRIGHT), 4,
                 intro * (0.35F + 0.4F * pulse + 0.25F * hover));
         AnchorsUi.panel(graphics, pill.x(), pill.y(), pill.width(), pill.height(),
                 AnchorsTheme.fade(AnchorsTheme.lerp(0xD03A0A1A, 0xE0521028, hover), intro), AnchorsTheme.fade(0xD0180410, intro));
         AnchorsUi.roundedOutline(graphics, pill.x(), pill.y(), pill.width(), pill.height(),
-                AnchorsTheme.fade(AnchorsTheme.lerp(0xFFB8243F, 0xFFFF6A86, Math.max(hover, pulse * 0.5F)), intro));
+                AnchorsTheme.fade(AnchorsTheme.lerp(tone(0xFFB8243F), tone(0xFFFF6A86), Math.max(hover, pulse * 0.5F)), intro));
         String label = Component.translatable("kohs_anchors.option.enemy_enabled").getString().toUpperCase(Locale.ROOT);
         String state = Component.translatable("kohs_anchors.state.off").getString().toUpperCase(Locale.ROOT);
         int trackX = pill.right() - 30;
@@ -2057,7 +2030,7 @@ public final class AnchorsScreen extends Screen {
                 AnchorsTheme.fade(AnchorsTheme.STATE_OFF, intro), false);
         AnchorsUi.panel(graphics, trackX, trackY, 22, 10, AnchorsTheme.fade(AnchorsTheme.SWITCH_OFF, intro),
                 AnchorsTheme.fade(0xFF12091F, intro));
-        AnchorsUi.roundedOutline(graphics, trackX, trackY, 22, 10, AnchorsTheme.fade(0xFF6A1030, intro));
+        AnchorsUi.roundedOutline(graphics, trackX, trackY, 22, 10, AnchorsTheme.fade(tone(0xFF6A1030), intro));
         graphics.fill(trackX + 2, trackY + 2, trackX + 8, trackY + 8, AnchorsTheme.fade(AnchorsTheme.KNOB_OFF, intro));
 
         AnchorsLayout.Rect body = this.layout.body();
@@ -2074,7 +2047,7 @@ public final class AnchorsScreen extends Screen {
         float scale = Math.min(stage.width(), stage.height()) / 2.4F;
         float centerY = stage.y() + stage.height() / 2.0F;
         AnchorsUi.sigil(graphics, stage.centerX(), Math.round(centerY + scale * 0.2F), Math.round(scale * 2.0F),
-                motion ? seconds * 0.8D : 0.0D, AnchorsTheme.CRIMSON, 0.6F * intro, 0.0F);
+                motion ? seconds * 0.8D : 0.0D, tone(AnchorsTheme.CRIMSON), 0.6F * intro, 0.0F);
         if (this.enemyReveal == null && this.enemySwitch == null) {
             this.enemyFigure.draw(graphics, stage.centerX(), centerY, scale, intro * 0.92F, 1.0F, motion, true, true,
                     AnchorFigure.enemyColor(), 1.0F);
@@ -2093,7 +2066,7 @@ public final class AnchorsScreen extends Screen {
         boolean advanced = crimson();
         if (withTitle) {
             AnchorsUi.label(graphics, this.font, this.statsTitle.toUpperCase(Locale.ROOT), x, lineY,
-                    AnchorsTheme.fade(advanced ? 0xFFFF9AB0 : AnchorsTheme.SECTION, alpha), false);
+                    AnchorsTheme.fade(advanced ? tone(0xFFFF9AB0) : AnchorsTheme.SECTION, alpha), false);
             lineY += 13;
         }
         String[] keys;
@@ -2169,7 +2142,7 @@ public final class AnchorsScreen extends Screen {
         }
         AnchorsUi.label(graphics, this.font, note, left + (right - left - noteWidth) / 2,
                 footer.y() + (footer.height() - 8) / 2 + 1,
-                AnchorsTheme.fade(armed ? 0xFFFFC2CE : advanced ? 0xFFE08A9E : AnchorsTheme.TEXT_DIM, intro), false);
+                AnchorsTheme.fade(armed ? 0xFFFFC2CE : advanced ? tone(0xFFE08A9E) : AnchorsTheme.TEXT_DIM, intro), false);
     }
 
     /** The header's small anchor charges one light at a time and starts over. */
@@ -2284,13 +2257,7 @@ public final class AnchorsScreen extends Screen {
                     }
                 }
             }
-            if (enemyPage) {
-                if (button == Keys.LEFT_BUTTON && this.previewArt.contains(mouseX, mouseY)) {
-                    this.figureDragging = true;
-                    this.figureDragDistance = 0.0D;
-                    return true;
-                }
-            } else if (this.anchorPreview.mouseClicked(this.previewArt, mouseX, mouseY, button, doubleClick)) {
+            if (stageShown() && this.anchorPreview.mouseClicked(this.previewArt, mouseX, mouseY, button)) {
                 return true;
             }
         }
@@ -2305,11 +2272,6 @@ public final class AnchorsScreen extends Screen {
         if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null || this.enemyIntro != null
                 || this.enemySwitch != null || this.herziumWindow != null) {
-            return true;
-        }
-        if (this.figureDragging) {
-            this.enemyFigure.drag(dragX, dragY);
-            this.figureDragDistance += Math.abs(dragX) + Math.abs(dragY);
             return true;
         }
         if (this.popover != null) {
@@ -2341,15 +2303,6 @@ public final class AnchorsScreen extends Screen {
         if (this.entry != null || this.serverCheck != null || this.enemyReveal != null || this.devWarning != null || this.safeWarning != null
                 || this.crystalModal != null || this.soundPicker != null || this.guardWarning != null
                 || this.enemyIntro != null || this.enemySwitch != null || this.herziumWindow != null) {
-            return true;
-        }
-        if (this.figureDragging) {
-            this.figureDragging = false;
-            if (this.figureDragDistance < 3.0D) {
-                // A click, not a drag: one more charge, with the charge sound the player chose.
-                this.enemyFigure.cycleCharge();
-                AnchorSounds.previewCharge(0.9F + this.enemyFigure.charge() * 0.05F);
-            }
             return true;
         }
         if (this.popover != null) {
@@ -2393,7 +2346,7 @@ public final class AnchorsScreen extends Screen {
         if (workshopTab() && this.workshop != null) {
             return this.workshop.mouseScrolled(mouseX, mouseY, verticalAmount);
         }
-        if (!enemyPage && this.anchorPreview.mouseScrolled(this.previewArt, mouseX, mouseY, verticalAmount)) {
+        if (stageShown() && this.anchorPreview.mouseScrolled(this.previewArt, mouseX, mouseY, verticalAmount)) {
             return true;
         }
         if (this.maxScroll > 0 && verticalAmount != 0.0D && this.layout.options.contains(mouseX, mouseY)) {

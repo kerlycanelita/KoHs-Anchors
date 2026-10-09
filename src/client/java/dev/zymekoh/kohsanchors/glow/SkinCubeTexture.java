@@ -37,6 +37,8 @@ public final class SkinCubeTexture {
     private DynamicTexture texture;
     private RenderType cutout;
     private RenderType translucent;
+    private RenderType unlit;
+    private RenderType unlitTranslucent;
     private int resolution;
     private int topFrames = 1;
     private int width;
@@ -58,6 +60,19 @@ public final class SkinCubeTexture {
 
     public RenderType translucent() {
         return this.translucent;
+    }
+
+    /**
+     * The same faces with no light of the scene on them, only the colour each vertex gives: the
+     * settings screen's stage lights its anchor itself. Vanilla's beacon beam material is exactly a
+     * texture times a colour.
+     */
+    public RenderType unlit() {
+        return this.unlit;
+    }
+
+    public RenderType unlitTranslucent() {
+        return this.unlitTranslucent;
     }
 
     /** The lit top's frame to draw now, from the game's own 50 ms frame step. */
@@ -90,6 +105,8 @@ public final class SkinCubeTexture {
             Minecraft.getInstance().getTextureManager().register(this.id, this.texture);
             this.cutout = RenderTypes.entityCutout(this.id);
             this.translucent = RenderTypes.entityTranslucent(this.id);
+            this.unlit = RenderTypes.beaconBeam(this.id, false);
+            this.unlitTranslucent = RenderTypes.beaconBeam(this.id, true);
         }
         NativeImage pixels = this.texture.getPixels();
         if (pixels == null) {

@@ -95,10 +95,10 @@ final class EnemyReveal {
             for (int ring = 0; ring < 3; ring++) {
                 float r = 1.0F - ((gather + ring / 3.0F) % 1.0F);
                 AnchorsUi.ring(graphics, cx, cy, Math.round(startScale * (0.6F + r * 2.4F)), 1,
-                        AnchorsTheme.withAlpha(0xFF315C, Math.round(220 * (1.0F - r))));
+                        AnchorsTheme.withAlpha(AnchorsTheme.enemyTone(0xFF315C), Math.round(220 * (1.0F - r))));
             }
             AnchorsUi.glowEllipse(graphics, cx, cy, Math.round(startScale * (1.2F + gather)), Math.round(startScale * (1.1F + gather)),
-                    0xFF315C, 0.5F + 0.4F * gather);
+                    AnchorsTheme.enemyTone(0xFF315C), 0.5F + 0.4F * gather);
             int shake = Math.round((float) Math.sin(System.nanoTime() / 6_000_000.0D) * 2.0F * gather);
             this.figure.draw(graphics, startX + shake, startY, startScale * (1.0F + 0.12F * gather), 1.0F, 1.0F, true, true, true,
                     AnchorFigure.enemyColor(), 1.0F);
@@ -113,7 +113,7 @@ final class EnemyReveal {
         if (burst < 1.0F) {
             // The shockwave and the blades of light from where it stood.
             AnchorsUi.ring(graphics, cx, cy, Math.round(startScale * (0.6F + burst * 5.0F)), 2,
-                    AnchorsTheme.withAlpha(0xFF315C, Math.round(230 * (1.0F - burst))));
+                    AnchorsTheme.withAlpha(AnchorsTheme.enemyTone(0xFF315C), Math.round(230 * (1.0F - burst))));
             AnchorsUi.ring(graphics, cx, cy, Math.round(startScale * (0.4F + burst * 3.4F)), 1,
                     AnchorsTheme.withAlpha(0xFFF7FF, Math.round(200 * (1.0F - burst))));
             for (int blade = 0; blade < 10; blade++) {
@@ -122,7 +122,7 @@ final class EnemyReveal {
                 float outer = startScale * (1.4F + burst * 4.2F);
                 AnchorsUi.segment(graphics, (float) (cx + Math.cos(angle) * inner), (float) (cy + Math.sin(angle) * inner),
                         (float) (cx + Math.cos(angle) * outer), (float) (cy + Math.sin(angle) * outer), 2,
-                        AnchorsTheme.withAlpha(blade % 2 == 0 ? 0xFF6A86 : 0xFFF7FF, Math.round(210 * (1.0F - burst))));
+                        AnchorsTheme.withAlpha(blade % 2 == 0 ? AnchorsTheme.enemyTone(0xFF6A86) : 0xFFF7FF, Math.round(210 * (1.0F - burst))));
             }
         }
         float flight = AnchorsTheme.clamp01((t - CHARGE_END) / (FLIGHT_END - CHARGE_END));
@@ -141,7 +141,7 @@ final class EnemyReveal {
                         + ember % 3;
                 int size = ember % 4 == 0 ? 3 : 2;
                 graphics.fill(Math.round(ex), Math.round(ey), Math.round(ex) + size, Math.round(ey) + size,
-                        AnchorsTheme.withAlpha(ember % 2 == 0 ? 0xFF315C : 0xFFC46B, Math.round(220 * (1.0F - back))));
+                        AnchorsTheme.withAlpha(ember % 2 == 0 ? AnchorsTheme.enemyTone(0xFF315C) : 0xFFC46B, Math.round(220 * (1.0F - back))));
             }
         } else if (this.sounds == 1) {
             play(SoundEvents.ANVIL_LAND, 1.6F, 0.25F);
@@ -151,9 +151,9 @@ final class EnemyReveal {
         float land = (t - FLIGHT_END) / (ON_LENGTH - FLIGHT_END);
         if (land > 0.0F && land < 1.0F) {
             AnchorsUi.ring(graphics, Math.round(endX), Math.round(endY), Math.round(endScale * (0.7F + land * 1.8F)), 2,
-                    AnchorsTheme.withAlpha(0xFF315C, Math.round(230 * (1.0F - land))));
+                    AnchorsTheme.withAlpha(AnchorsTheme.enemyTone(0xFF315C), Math.round(230 * (1.0F - land))));
             AnchorsUi.glowEllipse(graphics, Math.round(endX), Math.round(endY), Math.round(endScale * 1.6F),
-                    Math.round(endScale * 1.4F), 0xFF315C, 0.5F * (1.0F - land));
+                    Math.round(endScale * 1.4F), AnchorsTheme.enemyTone(0xFF315C), 0.5F * (1.0F - land));
         }
         this.figure.draw(graphics, x, y, scale, 1.0F, 1.0F, true, true, true, 0xFF3B4E, 0.0F);
     }

@@ -12,6 +12,7 @@
     "ClientLevelPredictionAccessor",
     "ClientLevelServerStateMixin",
     "ClientPacketListenerMixin",
+    "FallingBlockStageMixin",
     "KeyMappingAccessor",
     "KeyMappingMixin",
     "LevelRendererGlowMixin",

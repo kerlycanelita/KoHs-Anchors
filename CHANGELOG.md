@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.6.0 — 2026-10-08
+
+The anchor's room, and enemy anchors in their own colour.
+
+### The preview is a room
+
+- **A real floor and a real ceiling.** The anchor of the settings screen stands in a room of its
+  own: an obsidian floor, an obsidian ceiling two blocks above it, seen in perspective. The amethyst
+  wall that stood behind it is gone.
+- **The real glow.** What lights the room is the mod's own glow, the very geometry the world draws:
+  the lit pixels, the bloom, and the light thrown on the floor and the ceiling, from the same
+  settings. Power, bloom, light on the surroundings, colour and quality show in the room as they will
+  in a fight, where the old preview only painted a halo that looked like them. Under the glow the
+  room is lit as the game lights a dark place: by the block light an anchor gives, a quarter of full
+  light per charge.
+- **It answers like an anchor.** A right click charges it with glowstone and a left click detonates
+  it; so does a right click on a full one, as in the game. A detonation plays the world's own fade,
+  in the style chosen in General, the game's explosion smoke (as much of it as the smoke option
+  leaves) and its flash on the room. Left alone, the anchor still charges and detonates on its own.
+- **The camera walks around it.** Dragging turns around the anchor, all the way round, and a little
+  up or down, never out of the room; the wheel comes closer.
+- The enemy's page shows the same room with an enemy's anchor in it: their skin and their glow
+  colour, exactly as a fight shows it.
+
+### Enemy anchors
+
+- **"Yours" is yours.** In the window that explains enemy anchors, and in the switch between the two
+  pages, the player's anchor was drawn with the skin given to the enemy's, and the enemy's with its
+  lit pixels pulled to the glow colour. Each side wears its own now: the player's skin and glow on
+  one, the enemy's skin and colour on the other.
+- **The enemy's page takes the enemy's colour.** The background, the switch's animation, the window,
+  the panel, the tabs and every accent of that page were a fixed crimson. They follow the colour
+  picked for the enemy's anchors now, whatever its hue; with the red it starts with, the page looks
+  as it did.
+
 ## 0.5.2 — 2026-10-08
 
 Fixes for 0.5.1.
