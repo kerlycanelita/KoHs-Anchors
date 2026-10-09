@@ -32,8 +32,11 @@ sends them, and never adds a click of its own.
 ![The anchor workshop](https://raw.githubusercontent.com/kerlycanelita/KoHs-Anchors/main/docs/images/gallery-anchor-workshop.png)
 
 - **Anchor custom** — colour the frame and the glow, give each charge light its own colour, or paint
-  the anchor pixel by pixel. Syncs with **KoHs Crystal Tweaks** colours in one click.
-- **Glow anchors** — charged anchors shine, bloom and light the floor, walls and pillars around them.
+  the anchor pixel by pixel. Syncs with **KoHs Crystal Tweaks** colours in one click. The preview is
+  a real room: charge the anchor, detonate it and walk the camera around it.
+- **Glow anchors** — every light of a charged anchor shines where it is, in its own colour: the top,
+  the veins and the charge lights each spread a soft glow that follows their shape, and the anchor
+  lights the floor, walls and pillars around it. **Super glowing** adds an aura of light in the air.
   Walls hide the light, and three qualities keep it cheap.
 - **Enemy anchors** — anchors other players placed glow in their own colour, with a side of the
   settings of their own (and a battle between your anchors and theirs while its advanced options
@@ -67,7 +70,8 @@ it only acts where the server's own bridge plugin allows it. **Check your server
 
 ## Download
 
-Pick the file matching your Minecraft version. Client-side only.
+This page carries the file for Minecraft 26.2. The files for the other versions are on
+[GitHub](https://github.com/kerlycanelita/KoHs-Anchors/releases/latest). Client-side only.
 
 | Minecraft | Java | Fabric Loader |
 |---|---|---|
