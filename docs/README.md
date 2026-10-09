@@ -22,8 +22,9 @@
 The lab images under `images/` come from the lab: the charts are drawn by `charts.py` and the lab
 screenshots by the lab client's `gallery.labscript`, both in
 [KoHs Debug Tools](https://github.com/kerlycanelita/KoHs-Debug-Tools-for-KoHs-Mods/tree/main/anchors-debug).
-The `gallery-*` images are 0.4.0 in a 26.2 development client at 1920 × 1080, GUI scale 3, with
-default settings.
+The `gallery-*` images are 0.6.0 in a 26.2 development client at 1920 × 1061, GUI scale 3, with
+default settings; enemy anchors are switched on for their pages, Herzium is installed for its
+window, and the glow is at 150 % in the two world shots.
 
 ## Source map
 

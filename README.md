@@ -39,11 +39,11 @@ their own colour and pick the sounds you hear.
 | --- | --- |
 | ![The General tab of the settings screen](docs/images/gallery-general.png) | ![The anchor workshop: colours per layer and a pixel editor](docs/images/gallery-anchor-workshop.png) |
 | **General**: debounce, glowstone guard, detonation and what is always on. | **Anchor custom**: colour the frame and the glow, or paint them pixel by pixel. |
-| ![The Glow tab with the glowing anchor preview](docs/images/gallery-glow-tab.png) | ![An enemy anchor's glow lighting a pillar and a wall in red](docs/images/gallery-glow-pillar.jpg) |
+| ![The Glow tab with the anchor glowing in its room](docs/images/gallery-glow-tab.png) | ![An enemy anchor's glow lighting a pillar and a wall in red](docs/images/gallery-glow-pillar.jpg) |
 | **Glow anchors**: power, bloom, light on the surroundings and quality. | The light spreads through the air: down a pillar, onto the floor and the walls. |
-| ![What enemy anchors are, the first time](docs/images/gallery-enemy-intro.png) | ![The enemy anchors' Glow tab, in crimson](docs/images/gallery-enemy-page.png) |
+| ![What enemy anchors are, the first time](docs/images/gallery-enemy-intro.png) | ![The enemy anchors' Glow tab, in their colour](docs/images/gallery-enemy-page.png) |
 | **Enemy anchors**: yours and the other players', told apart at a glance. | Their side turns the whole screen red, with three tabs and their anchor as the world draws it. |
-| ![The enemy anchors' Colours tab](docs/images/gallery-enemy-colours.png) | ![Coming soon: an endless battle between your anchors and theirs](docs/images/gallery-enemy-battle.jpg) |
+| ![The enemy anchors' Skin tab: their own colours and pixels](docs/images/gallery-enemy-skin.png) | ![Coming soon: an endless battle between your anchors and theirs](docs/images/gallery-enemy-battle.jpg) |
 | **Colours**: the colour their anchors glow in. | **Advanced** is coming soon; until then your anchors and theirs fight it out with glowstone. |
 | ![The glowstone guard warning with the safe anchor clip](docs/images/gallery-glowstone-guard.jpg) | ![Herzium's orders explained, last input recommended](docs/images/gallery-herzium.png) |
 | **Glowstone guard** shows what it takes away, a safe anchor clip at 60 fps, before it turns on. | **Herzium**: its hotbar order, read from Herzium itself, and how the two mods talk. |
