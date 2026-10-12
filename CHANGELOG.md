@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.6.1 — unreleased (26.2 test build)
+## 0.6.1 — 2026-10-12
 
 A click that lands a moment before its number key goes with that key.
 
