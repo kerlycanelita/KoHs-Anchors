@@ -32,6 +32,12 @@ abstract class MinecraftMixin {
         AnchorInput.beginPass((Minecraft) (Object) this);
     }
 
+    /** Every use of the item in hand, from a click, a held key or this mod: the item has had a click. */
+    @Inject(method = "startUseItem", at = @At("HEAD"))
+    private void kohsAnchors$useRuns(CallbackInfo callback) {
+        AnchorInput.onUseRun((Minecraft) (Object) this);
+    }
+
     /**
      * Every press Vanilla takes in {@code handleKeybinds}: presses left for the next tick stay
      * queued, so a tick never sends a slot change after one of its clicks. Chains with other mods
@@ -63,5 +69,15 @@ abstract class MinecraftMixin {
             target = "Lnet/minecraft/client/Minecraft;startUseItem()V", ordinal = 0))
     private boolean kohsAnchors$admitUse(Minecraft minecraft) {
         return AnchorInput.admitQueuedUse(minecraft);
+    }
+
+    /**
+     * Ordinal 1 is Vanilla's repeat for a key still held. It is left alone, except in the one tick
+     * whose click waits for its number key: the repeat would use the item that click was kept from.
+     */
+    @WrapWithCondition(method = "handleKeybinds", at = @At(value = "INVOKE",
+            target = "Lnet/minecraft/client/Minecraft;startUseItem()V", ordinal = 1))
+    private boolean kohsAnchors$heldUseWaits(Minecraft minecraft) {
+        return !AnchorInput.clickWaits();
     }
 }

@@ -481,9 +481,10 @@ public final class AnchorsScreen extends Screen {
         closeBranch();
         offset = section(offset, "kohs_anchors.section.core");
         offset = note(offset, "core", () -> Component.translatable("kohs_anchors.core.badge").getString(),
-                AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, refreshTargetBeforeUse, AnchorChain, mergesRepeat",
+                AnchorsTheme.ACCENT_BRIGHT, "AnchorInput: replay, pairSlip, waitsForKey, refreshTargetBeforeUse, AnchorChain, mergesRepeat",
                 "chained " + AnchorStats.chainedClicks() + " · mirrored " + AnchorStats.mirroredStates() + " · caught up "
-                        + AnchorStats.heldClicks() + " · dropped " + AnchorStats.droppedClicks() + " · wait "
+                        + AnchorStats.heldClicks() + " · with their key " + AnchorStats.pairedClicks() + " · dropped "
+                        + AnchorStats.droppedClicks() + " · wait "
                         + Latency.answerWindowNanos(700_000_000L, 1_500_000_000L) / 1_000_000L + " ms",
                 "DetonationPredictor.showAtInput / onAnchorUsed", "Settings fields transient: not saved");
         offset = section(offset, "kohs_anchors.section.interface");

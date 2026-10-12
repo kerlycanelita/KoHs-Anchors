@@ -6,8 +6,10 @@ and the Mixins behind every option.
 
 ## The rule
 
-- **Every action is a press the player made.** The mod never aims, places, charges, detonates,
-  repeats or times a click for the player. It never selects a slot that was not pressed.
+- **Every action is a press the player made.** The mod never aims, places, charges, detonates or
+  repeats a click for the player, never sends one sooner than it was pressed, and never selects a
+  slot that was not pressed. A click can wait: for the block it was aimed at, or one tick for the
+  number key pressed with it.
 - **Without a server's bridge, the server sees Vanilla.** The same packet types, one per press, in
   Vanilla's order and tick shape: one hotbar change per tick, before that tick's clicks. No reach,
   movement, rotation or combat change, and no packet of the mod's own.
@@ -26,6 +28,7 @@ does, so that admins can judge it.
 | Feature | What changes | What the server receives | Class |
 | --- | --- | --- | --- |
 | Pressed order | Number keys and uses in one tick are applied in the order they were pressed | Vanilla's packets, Vanilla's per-tick shape | Input fix |
+| A click goes with its key | A click pressed up to 30 ms before a number key, with an item that has had its click or cannot be used, is applied after that key; with a tick between the two, a click that could only be wasted waits that one tick for the key | Vanilla's packets and tick shape: the slot change, then the click, in one tick. Nothing sooner, nothing added | Input fix |
 | Fresh target | After a slot change, the next use aims at what the crosshair hits now | Vanilla's use packet | Input fix |
 | Immediate chain | A click on an anchor that is still exploding goes out when pressed, at the old anchor, as Vanilla sends it; its outcome is drawn at once | Vanilla's packet, at Vanilla's moment | Input fix |
 | Anchor block follows the server | The server's state of a chained anchor's block is shown when it arrives, not after Vanilla's acknowledgement | Nothing; no click goes to a block the server already removed | Client world sync |
@@ -41,6 +44,25 @@ does, so that admins can judge it.
 | Server bridge | Says hello on the `kohs_anchors:bridge` plugin channel, only if the server registered it | One hello, the features in use, a ping a second | Server-supported |
 | Better glow enemy anchors | The server's bridge says whether each anchor is yours or someone else's | Nothing more | Server-supported |
 | Instant detonation click | Changes **when** a detonation reaches the server | Vanilla's packet, between ticks | Server-supported, opt-in |
+
+## A click goes with its key
+
+Inside a tick, Vanilla applies the number keys before the clicks, so a click that lands a moment
+before its key still uses the key's item. Pressed order took that away: the click ran with the item
+of the step before. From 0.6.1 a click pressed up to 30 ms before a number key is applied after it
+when the item in hand has already had its click, or cannot be used at all (a sword, a mace, a totem,
+an empty hand), which is what Vanilla does with the same presses. The first click with an item that
+can be used is never moved.
+
+When a tick falls between the click and its key, Vanilla runs the click alone, with the old item.
+Here that click waits one tick, and only when it could do nothing an anchor loop wants: glowstone on
+an anchor that has a charge, an anchor on one that has none, or, within a second of a click on an
+anchor, glowstone on another block or a totem, a sword, a mace or an empty hand where no charged
+anchor is. Glowstone placed as a block away from anchors never waits. On the next tick it runs after
+the key pressed within 30 ms of it, or as it was pressed. This is the one place where the mod is more
+forgiving than Vanilla, and it never is faster: the click goes out in the tick of its key, where a
+click pressed after the key would have gone.
+[click-before-key-0.6.1](../research/click-before-key-0.6.1.md)
 
 ## The immediate chain is Vanilla's timing
 

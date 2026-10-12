@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.6.1 — unreleased (26.2 test build)
+
+A click that lands a moment before its number key goes with that key.
+
+### Fixed
+
+- **The click before its key.** Two hands press a number key and its click together, and now and
+  then the click lands a few milliseconds first. Pressed order ran that click with the item of the
+  step before: a second glowstone instead of the detonation, an anchor on the anchor just placed,
+  and every step after it one click late. A player's recording showed 61 % of their anchor,
+  glowstone, totem cycles clean. A click pressed up to 30 ms before a number key is now applied after
+  that key when the item in hand has already had its click or cannot be used at all (a sword, a mace,
+  a totem, an empty hand), as Vanilla does inside a tick. The first click with an item that can be
+  used is never moved.
+- **The same across a tick.** When a tick falls between the click and its key, Vanilla runs the
+  click alone with the old item. A click that could only be wasted there (glowstone on a charged
+  anchor, an anchor on one that is not charged, or, in the middle of an anchor loop, glowstone on
+  the floor or a totem, sword, mace or empty hand where no charged anchor is) waits that one tick
+  and goes with the key pressed within 30 ms of it, or runs as it was pressed. A click on a chest or
+  any block with a menu never waits, and neither does glowstone placed as a block away from anchors.
+  In the laboratory, the loop with one click in five landing before its key completed
+  47/120 cycles with 0.6.0 and Herzium 1.12.0, 91/120 with Vanilla, and 120/120 with 0.6.1
+  and Herzium 1.12.1 (117/120 with 100 ms of latency); slips across a tick went right
+  22/22 and 19/22 times (Vanilla: 1/19 and 0/18). No Grim alert.
+
+### Changed
+
+- The core's note in the settings counts the clicks that went with their key.
+
+See [click-before-key-0.6.1](docs/research/click-before-key-0.6.1.md) and the
+[legitimacy audit](docs/audits/legitimacy.md).
+
 ## 0.6.0 — 2026-10-09
 
 The anchor's room, a glow that follows the anchor's own lights, and enemy anchors in their own colour.

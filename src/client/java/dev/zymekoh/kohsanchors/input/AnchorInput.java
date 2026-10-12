@@ -86,6 +86,23 @@ import net.minecraft.world.phys.HitResult;
 public final class AnchorInput {
     private static final InputJournal JOURNAL = new InputJournal();
     private static final int[] BURST = new int[InputJournal.CAPACITY];
+    private static final long[] BURST_TIMES = new long[InputJournal.CAPACITY];
+    /** A click at most this long before a number key can be that key's own click, landed a moment early. */
+    private static final long SLIP_NANOS = 30_000_000L;
+    /** The slot the last use ran with, while it is still the one in hand; -1 once another was. */
+    private static int usedSlot = -1;
+    /** When this client last used something in anchor play: for a second after, it is in an anchor loop. */
+    private static long anchorUseNanos;
+    private static final long LOOP_NANOS = 1_000_000_000L;
+    /** When the one click this pass has was pressed, or 0 when the pass has anything else. */
+    private static long loneUseNanos;
+    /**
+     * A click kept back one tick: with the item in hand it could only be wasted, and its number key
+     * may be a moment behind it. {@link #waitingSlot} is the slot it was pressed with.
+     */
+    private static boolean waiting;
+    private static long waitingNanos;
+    private static int waitingSlot;
 
     /** At most this many clicks wait for one anchor; more than that is not a burst but a hold. */
     private static final int HOLD_CAPACITY = 6;
@@ -238,8 +255,17 @@ public final class AnchorInput {
         if (minecraft.player == null || minecraft.level == null || Mc.screen(minecraft) != null
                 || Mc.overlay(minecraft) != null) {
             // A screen releases every key mapping and a world change starts input over: the order
-            // of presses Vanilla no longer counts goes with them.
+            // of presses Vanilla no longer counts goes with them, and so does a click kept back a tick.
             JOURNAL.clear();
+            if (waiting) {
+                waiting = false;
+                AnchorStats.droppedClicks(1);
+            }
+        }
+        if (minecraft.player == null || minecraft.player.getInventory().getSelectedSlot() != usedSlot) {
+            // Another item is in hand, by a key, the wheel or the server: coming back to this one is
+            // a new choice, and its first click is its own.
+            usedSlot = -1;
         }
         AnchorVeil.tick(minecraft);
         DetonationPredictor.tick(minecraft);
@@ -281,6 +307,160 @@ public final class AnchorInput {
         if (tickSlot < 0 && minecraft.player != null) {
             tickSlot = minecraft.player.getInventory().getSelectedSlot();
         }
+    }
+
+    /** Vanilla is about to use the item in hand, whoever asked for it: that item has had a click. */
+    public static void onUseRun(Minecraft minecraft) {
+        if (minecraft.player != null) {
+            usedSlot = minecraft.player.getInventory().getSelectedSlot();
+            // A click on an anchor, or one that places an anchor: glowstone on other blocks is building.
+            if (AnchorContext.targetsAnchor(minecraft) || minecraft.player.getMainHandItem().is(Items.RESPAWN_ANCHOR)) {
+                anchorUseNanos = System.nanoTime();
+            }
+        }
+    }
+
+    /** Whether this tick's click waits for its key: the repeat for a held key must not use the item either. */
+    public static boolean clickWaits() {
+        return waiting;
+    }
+
+    /**
+     * Whether the click Vanilla is about to run should wait one tick for its number key.
+     *
+     * <p>The click of a pair can land a moment before its key with a tick in between: the tick sees
+     * the click alone, with the item of the step before. In an anchor loop that click is wasted
+     * (a second charge, an anchor on the anchor just placed, a totem where nothing is charged), and
+     * the key that follows gets no click: the loop is one click late from there on. So a click that
+     * is alone in its tick, pressed less than 30 ms before it, with an item that has had its click
+     * (or hands that cannot be used at all) and can do nothing useful, waits. On the next tick it
+     * runs with the key pressed within 30 ms of it, if there is one, or as it was. It is never
+     * created, repeated or sent early; a screen or a world change in between drops it, as Vanilla
+     * drops the clicks still queued.</p>
+     */
+    private static boolean waitsForKey(Minecraft minecraft) {
+        // Lone: no other click of this pass, counted by this mod or still queued in Vanilla's key.
+        if (loneUseNanos == 0L || usesThisPass != 0 || heldCount != 0 || deferring || tickSlot >= 0
+                || pending(minecraft.options.keyUse) || !AnchorsConfig.settings().inputOrder || minecraft.player == null
+                || System.nanoTime() - loneUseNanos >= SLIP_NANOS || !AnchorContext.ready(minecraft)) {
+            return false;
+        }
+        int selected = minecraft.player.getInventory().getSelectedSlot();
+        return (usedSlot == selected || idleHands(minecraft)) && wasted(minecraft);
+    }
+
+    /** Hands whose use does nothing have no first click to keep: from a sword, the click is the next item's. */
+    private static boolean idleHands(Minecraft minecraft) {
+        return inert(minecraft.player.getMainHandItem()) && inert(minecraft.player.getOffhandItem());
+    }
+
+    /**
+     * Whether, with what is in hand, a click can do nothing an anchor loop wants: glowstone on an
+     * anchor that has a charge, an anchor on an anchor without a charge, or, within a second of a
+     * click on an anchor, glowstone on another block or hands with nothing to use where no charged
+     * anchor is. Judged against what is drawn.
+     */
+    private static boolean wasted(Minecraft minecraft) {
+        if (minecraft.level == null || !(minecraft.hitResult instanceof BlockHitResult hit)
+                || hit.getType() != HitResult.Type.BLOCK || minecraft.player.isSecondaryUseActive()
+                || DetonationPredictor.anchorsWork(minecraft.level, hit.getBlockPos())
+                // The detonation this click showed when it was pressed: the anchor is drawn gone
+                // because of this very click, which is anything but wasted.
+                || DetonationPredictor.awaitsUse(hit.getBlockPos())) {
+            return false;
+        }
+        BlockState drawn = AnchorVeil.predicted(hit.getBlockPos());
+        BlockState state = drawn != null ? drawn : minecraft.level.getBlockState(hit.getBlockPos());
+        boolean anchor = state.is(Blocks.RESPAWN_ANCHOR);
+        int charge = anchor ? state.getValue(net.minecraft.world.level.block.RespawnAnchorBlock.CHARGE) : 0;
+        ItemStack main = minecraft.player.getMainHandItem();
+        boolean loop = System.nanoTime() - anchorUseNanos < LOOP_NANOS;
+        if (main.is(Items.GLOWSTONE)) {
+            // Outside a loop, glowstone on the floor is a block being built with.
+            return anchor ? charge >= 1 : loop;
+        }
+        if (main.is(Items.RESPAWN_ANCHOR)) {
+            return anchor && charge == 0;
+        }
+        // A chest or any block with a menu is opened by an empty hand too: that click is not wasted.
+        return !(anchor && charge >= 1) && loop
+                && inert(main) && inert(minecraft.player.getOffhandItem()) && !AnchorContext.targetsMenuBlock(minecraft);
+    }
+
+    /** A hand whose use does nothing by itself: empty, a totem, a sword or a mace. */
+    private static boolean inert(ItemStack stack) {
+        return stack.isEmpty() || stack.is(Items.TOTEM_OF_UNDYING) || stack.is(Items.MACE)
+                || stack.is(net.minecraft.tags.ItemTags.SWORDS);
+    }
+
+    /**
+     * The click that waited runs now: with the number key pressed within 30 ms of it, which is
+     * applied first, or with the slot it was pressed with. When another slot was chosen since, later
+     * than that, it is dropped: it was a click that could do nothing.
+     *
+     * @return how many presses of the burst are left
+     */
+    private static int resolveWaiting(Minecraft minecraft, int count) {
+        waiting = false;
+        if (minecraft.player == null || !AnchorContext.ready(minecraft)) {
+            return count;
+        }
+        Inventory inventory = minecraft.player.getInventory();
+        // A tick that has clicked already (a click the server's bridge let out at once) keeps its
+        // slot: a change now would follow that click, which Vanilla never sends.
+        boolean keyed = count > 0 && BURST[0] != InputJournal.USE && BURST[0] != waitingSlot
+                && BURST_TIMES[0] != InputJournal.CARRIED && BURST_TIMES[0] - waitingNanos <= SLIP_NANOS
+                && (tickSlot < 0 || tickSlot == BURST[0]);
+        if (keyed) {
+            KeyMapping mapping = minecraft.options.keyHotbarSlots[BURST[0]];
+            if (mapping.consumeClick()) {
+                inventory.setSelectedSlot(BURST[0]);
+                HerziumBridge.pressConsumed(BURST[0], ((KeyMappingAccessor) mapping).kohsAnchors$clickCount());
+                System.arraycopy(BURST, 1, BURST, 0, count - 1);
+                System.arraycopy(BURST_TIMES, 1, BURST_TIMES, 0, count - 1);
+                Mc.pick(minecraft);
+                AnchorStats.pairedClick();
+                run(minecraft, decide(minecraft));
+                return count - 1;
+            }
+        }
+        if (inventory.getSelectedSlot() == waitingSlot && (tickSlot < 0 || tickSlot == waitingSlot)) {
+            run(minecraft, decide(minecraft));
+        } else {
+            AnchorStats.droppedClicks(1);
+        }
+        return count;
+    }
+
+    /**
+     * Two hands press a number key and its click together, and now and then the click lands
+     * first. Pressed order would run that click with the item before the key: a second glowstone
+     * instead of the detonation, and every step after it one click late. Vanilla never makes that
+     * mistake inside a tick, because it applies a tick's number keys before its clicks.
+     *
+     * <p>So the click goes behind the key when it can only be that key's: it opens the burst, the
+     * key came within 30 ms of it, and the item in hand has had its click already or cannot be
+     * used at all (a sword, an empty hand). A first click with an item that can be used is never
+     * moved: "click, then pick the next item" stays in pressed order.</p>
+     *
+     * @return whether the burst changed
+     */
+    private static boolean pairSlip(Minecraft minecraft, int[] burst, long[] times, int count) {
+        if (count < 2 || burst[0] != InputJournal.USE || burst[1] == InputJournal.USE || minecraft.player == null) {
+            return false;
+        }
+        int selected = minecraft.player.getInventory().getSelectedSlot();
+        if (burst[1] == selected || usedSlot != selected && !idleHands(minecraft) || times[0] == InputJournal.CARRIED
+                || times[1] == InputJournal.CARRIED || times[1] - times[0] > SLIP_NANOS) {
+            return false;
+        }
+        burst[0] = burst[1];
+        burst[1] = InputJournal.USE;
+        long time = times[0];
+        times[0] = times[1];
+        times[1] = time;
+        AnchorStats.pairedClick();
+        return true;
     }
 
     /**
@@ -341,6 +521,7 @@ public final class AnchorInput {
     /** Start of {@code handleKeybinds}: held clicks whose anchor is gone run first, in order. */
     public static void beginPass(Minecraft minecraft) {
         hotbarPointReached = false;
+        loneUseNanos = 0L;
         usesThisPass = 0;
         lastUseSlot = -1;
         deferring = false;
@@ -359,7 +540,12 @@ public final class AnchorInput {
         }
         hotbarPointReached = true;
 
-        int count = JOURNAL.drainInto(BURST, System.nanoTime());
+        int count = JOURNAL.drainInto(BURST, BURST_TIMES, System.nanoTime());
+        if (waiting) {
+            count = resolveWaiting(minecraft, Math.max(0, count));
+        }
+        loneUseNanos = count == 1 && BURST[0] == InputJournal.USE && BURST_TIMES[0] != InputJournal.CARRIED
+                ? BURST_TIMES[0] : 0L;
         if (count < 2 || !AnchorsConfig.settings().inputOrder) {
             return;
         }
@@ -378,7 +564,11 @@ public final class AnchorInput {
                 || pending(options.keyAttack) || pending(options.keyPickItem)) {
             return;
         }
-        if (!needsPressedOrder(BURST, count) && tickSlot < 0) {
+        // A click that landed a moment before its key goes behind it; that burst is applied here
+        // even when its order then needs nothing else, so the key is applied before the click
+        // whatever another mod makes of "click, key".
+        boolean paired = isAnchorBurst(minecraft, BURST, count) && pairSlip(minecraft, BURST, BURST_TIMES, count);
+        if (!paired && !needsPressedOrder(BURST, count) && tickSlot < 0) {
             return;
         }
         if (!isAnchorBurst(minecraft, BURST, count)) {
@@ -393,6 +583,14 @@ public final class AnchorInput {
      * @return whether Vanilla should run it now; {@code false} when it is held
      */
     public static boolean admitQueuedUse(Minecraft minecraft) {
+        if (waitsForKey(minecraft)) {
+            waiting = true;
+            waitingNanos = loneUseNanos;
+            waitingSlot = minecraft.player.getInventory().getSelectedSlot();
+            loneUseNanos = 0L;
+            AnchorStats.heldClick();
+            return false;
+        }
         Decision decision = decide(minecraft);
         if (decision == Decision.RUN) {
             return true;

@@ -60,6 +60,16 @@ What made KoHs Anchor's land your clicks right is no longer optional.
   order you pressed them, and the last number key you pressed is the one left selected. Only a
   burst whose number keys all come before its uses, and all pick the same slot, is left to the
   game, because every hotbar order gives it the same result.
+- **A click goes with its key.** Two hands press a number key and its click together, and now and
+  then the click lands a few milliseconds first. Pressed order ran it with the item of the step
+  before: a second glowstone instead of the detonation, an anchor on the anchor just placed, and
+  every step after it one click late. A click pressed up to 30 ms before a number key, with an item
+  that has already had its click or that cannot be used (a sword, a mace, a totem, an empty hand),
+  is applied after that key, as Vanilla does inside a tick. When a
+  tick falls between the two, a click that could only be wasted (glowstone on a charged anchor, an
+  anchor on one that is not charged, a totem or a sword on the ground in the middle of an anchor
+  loop) waits that one tick and goes with its key. No click is created, and none goes out sooner
+  than it was pressed.
 - **Vanilla's tick shape.** A burst goes out one slot change per tick, before that tick's clicks,
   as Vanilla sends it when the presses are a tick apart: "anchor, use, glowstone, use, sword, use"
   inside one tick lands on three consecutive ticks. Anticheats that read a tick's packets

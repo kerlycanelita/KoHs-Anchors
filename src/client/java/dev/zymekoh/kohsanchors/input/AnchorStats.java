@@ -11,6 +11,7 @@ public final class AnchorStats {
     private static int confirmedDetonations;
     private static int heldClicks;
     private static int mergedClicks;
+    private static int pairedClicks;
     private static int doubleAnchors;
     private static int droppedClicks;
     private static int chainedClicks;
@@ -66,6 +67,11 @@ public final class AnchorStats {
     /** Repeat clicks with the same item on an exploding anchor, folded into the one already waiting. */
     public static int mergedClicks() {
         return mergedClicks;
+    }
+
+    /** Clicks that landed a moment before their number key and were applied behind it. */
+    public static int pairedClicks() {
+        return pairedClicks;
     }
 
     public static int doubleAnchors() {
@@ -180,6 +186,10 @@ public final class AnchorStats {
 
     static void mergedClick() {
         mergedClicks++;
+    }
+
+    static void pairedClick() {
+        pairedClicks++;
     }
 
     static void doubleAnchor() {

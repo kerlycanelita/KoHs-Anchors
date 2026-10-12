@@ -24,8 +24,12 @@ final class InputJournal {
      */
     private static final long MAX_AGE_NANOS = 2_000_000_000L;
 
+    /** In {@link #drainInto}'s times: a press carried over from the tick before, not pressed when stamped. */
+    static final long CARRIED = Long.MIN_VALUE;
+
     private final int[] actions = new int[CAPACITY];
     private final long[] times = new long[CAPACITY];
+    private final boolean[] carried = new boolean[CAPACITY];
     private int size;
     private boolean unusable;
 
@@ -36,6 +40,7 @@ final class InputJournal {
         }
         this.actions[this.size] = action;
         this.times[this.size] = now;
+        this.carried[this.size] = false;
         this.size++;
     }
 
@@ -51,6 +56,7 @@ final class InputJournal {
             if (this.actions[index] == USE) {
                 System.arraycopy(this.actions, index + 1, this.actions, index, this.size - index - 1);
                 System.arraycopy(this.times, index + 1, this.times, index, this.size - index - 1);
+                System.arraycopy(this.carried, index + 1, this.carried, index, this.size - index - 1);
                 this.size--;
                 return;
             }
@@ -65,9 +71,11 @@ final class InputJournal {
         int keep = Math.min(count, CAPACITY - this.size);
         System.arraycopy(this.actions, 0, this.actions, keep, this.size);
         System.arraycopy(this.times, 0, this.times, keep, this.size);
+        System.arraycopy(this.carried, 0, this.carried, keep, this.size);
         for (int index = 0; index < keep; index++) {
             this.actions[index] = burst[from + index];
             this.times[index] = now;
+            this.carried[index] = true;
         }
         this.size += keep;
         if (keep < count) {
@@ -76,12 +84,13 @@ final class InputJournal {
     }
 
     /**
-     * Moves the pending actions into {@code out} and empties the journal.
+     * Moves the pending actions into {@code out}, and the moment each was pressed into
+     * {@code outTimes} ({@link #CARRIED} for one carried over), and empties the journal.
      *
      * @return how many actions were copied, or {@code -1} when the journal cannot be trusted for
      *         this pass and Vanilla should handle every press on its own
      */
-    int drainInto(int[] out, long now) {
+    int drainInto(int[] out, long[] outTimes, long now) {
         int count = this.size;
         boolean usable = !this.unusable;
         for (int index = 0; index < count && usable; index++) {
@@ -89,6 +98,7 @@ final class InputJournal {
                 usable = false;
             }
             out[index] = this.actions[index];
+            outTimes[index] = this.carried[index] ? CARRIED : this.times[index];
         }
         this.size = 0;
         this.unusable = false;
